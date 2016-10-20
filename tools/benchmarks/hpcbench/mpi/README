@@ -1,0 +1,32 @@
+
+ mpitest -- A benchmark to test MPI communication between two processes (nodes).
+
+ Usage(MPICH): mpirun -np 2 mpitest [options]
+ % mpirun -np 2 mpitest [-acinP] [-A size] [-e exponent] [-m message] [-o output] [-r repeat] [-t time]
+ [-a] Round Trip Time (latency) test. Disable by default.
+ [-A RTT-size] Specify the message size in bytes for RTT (latency) test.
+ [-c] CPU log option. Tracing system information during the test. Only available for Linux systems.
+ [-e n] Exponential tests with message size increasing exponentially from 1 to 2^n. Disable by default.
+ [-i] Ping-pong (bidirectional) test. Stream (unidirectional) test by default.
+ [-m message-size] Message size by bytes (1M by default). Disable in exponential tests.
+ [-n] Non-blocking communication. Blocking communication by default.
+ [-o output] Write test results to a file. Disable by default.
+ [-P] Plot file for gnuplot. Only enable when the output is specified. Disable by default.
+ [-r repeat] Repeat tests many times. Disable in exponential tests. 10 times by default.
+ [-t test-time] Specify test time by seconds. 5 seconds by default.
+ Note: Input supports the postfix of "kKmM". 1K=1024, 1M=1024x1024.
+
+ Example1: % mpirun -np 2 mpitest
+           Throughput stream test with default parameters.
+ Example2: % mpirun -np 2 mpitest -e 20
+           Exponential stream (unidirectional) test, message size from 1 byte to 2^20 (1M) bytes.
+ Example3: % mpirun -np 2 mpitest -c -m 10m -Po output.txt
+           Throughput stream test with 10MBytes message size, write result/plot files, log system info. 
+ Example4: % mpirun -np 2 mpitest -ni -m 100k -t 3 -r 10
+           Nonblocking ping-pong test. Message-size: 100KBytes; test-ime: 3 seconds; repeat 10 times.
+ Example5: % mpirun -np 2 mpitest -a -o rtt.txt
+           MPI Round Trip Time (latency) test. Write the result to file "rtt.txt".
+
+ To use own machine file: mpirun -np 2 -machinefile <machine file> mpitest [options]
+                      or: mpirun -p4pg <p4 process group file> mpitest [options]
+

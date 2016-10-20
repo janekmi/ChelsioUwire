@@ -1,0 +1,11 @@
+K 13
+svn:mergeinfo
+V 488
+/branches/1.0.1.x/www/target_qla22xx_23xx.html:731
+/branches/ibmvstgt-port/www/target_qla2x00t.html:2395,2398,2508-2511,2552,2559,2566,2585,2677,2680-2681,2723
+/branches/pr/www/target_qla2x00t.html:1584-1713
+/branches/srpt-separate-rx-tx-buffers/www/target_qla2x00t.html:2384-2441
+/branches/srpt-separate-rx-tx-buffers-2/www/target_qla2x00t.html:2381-2383
+/branches/sysfs-changes/www/target_qla2x00t.html:2896-2897,2901
+/branches/sysfs-tree-changes/www/target_qla2x00t.html:2972,3129,3142
+END

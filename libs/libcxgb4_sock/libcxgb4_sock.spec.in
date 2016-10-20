@@ -1,0 +1,52 @@
+
+Summary: LD_PRELOAD-able library for using Chelsio's User Mode UDP
+Name: libcxgb4_sock
+Version: 2.12.0.3
+Release: 1%{?dist}
+License: GPL/BSD
+Group: System Environment/Libraries
+BuildRoot: %{_tmppath}/%{name}-%{version}-root
+Source: http://www.openfabrics.org/downloads/cxgb4/%{name}-%{version}.tar.gz
+Url: http://www.openfabrics.org/
+
+%description
+libcxgb4_sock can be LD_PRELOAD-ed to have a sockets application use
+Chelsio's User Mode UDP instead of the host UDP, transparently 
+and without recompiling the application.
+
+%package devel
+Summary: Development files for the libcxgb4_sock
+Group: System Environment/Libraries
+Requires: %{name} = %{version}-%{release}
+
+%description devel
+Development files of libcxgb4_sock that may be linked directly to an
+application, which may be useful for debugging.
+
+%prep
+%setup -q
+
+%build
+%configure
+make
+
+%install
+make DESTDIR=${RPM_BUILD_ROOT} install
+# remove unpackaged files from the buildroot
+rm -f $RPM_BUILD_ROOT%{_libdir}/*.la
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%files
+/usr/bin/udp_echo
+%defattr(6777,root,root)
+%{_libdir}/libcxgb4_sock*.so.*
+%doc README ChangeLog COPYING AUTHORS
+
+%files devel
+/usr/bin/udp_echo
+%defattr(6777,root,root,-)
+%{_libdir}/libcxgb4_sock*.so
+
+%changelog

@@ -1,0 +1,17 @@
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier
+END
+verifier.pl
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/verifier.pl
+END
+README
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/README
+END

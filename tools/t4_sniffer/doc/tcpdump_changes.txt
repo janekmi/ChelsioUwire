@@ -1,0 +1,10 @@
+1. Search for "PCAP" in file aclocal.m4
+2. Locate the below piece of code
+
+places=`ls $srcdir/.. | sed -e 's,/$,,' -e "s,^,$srcdir/../," | \
+       egrep '/libpcap-[[0-9]]+\.[[0-9]]+(\.[[0-9]]*)?([[ab]][[0-9]]*|-PRE-GIT)?$'`
+
+3. Remove '$' present at the end of the above code. This makes configure script
+   search for libpcap.a in directories starting with libpcap and ending with
+   any string and not just numbers.
+4. Save and exit.

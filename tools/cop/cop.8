@@ -1,0 +1,250 @@
+.\" -*- nroff -*-
+.\" Copyright 2007-2009 by Chelsio Communications.  All Rights Reserved.
+.TH COP "8" "August 2009" "cop 1.3" "Linux"
+.SH "NAME"
+cop \- compile offload policies
+.SH "SYNOPSIS"
+.B cop
+[\fB\-dht\fR] [\fB\-o\fR \fIout_file\fR] [\fIpolicy_file\fR]
+.SH "DESCRIPTION"
+.BI cop
+compiles offload policies into a simple program form that can be loaded into
+the kernel and interpreted.  These offload policies are used to determine
+the \fIsettings\fR to be used for various connections based on matching
+\fIfilter\fR specifications (see \fBFORMAT OF OFFLOAD POLICIES\fR below).
+.PP
+Policy rules are read either from \fIpolicy_file\fR or from standard input
+if no file is supplied.  Rules have priority in the order of their
+appearance so list higher priority rules first.  The first rule whose filter
+matches a new connection is used to establish the settings for that
+connection.  If no specified rule matches a connection, a default settings
+will be used which disables offloading for that connection.
+.SH "OPTIONS"
+.TP
+\fB\-d\fR
+Enables debugging mode.  Among other things this prints out a human-readable
+version of the generated program.
+.PP
+.TP
+\fB\-h\fR
+Show usage information.
+.PP
+.TP
+\fB\-o\fR \fIout_file\fR
+Save the generated program into \fIout_file\fR.  The program is not saved if
+this option is omitted.
+.PP
+.TP
+\fB\-t\fR
+After generating the program enter test mode.  In this mode the user is asked
+to enter values for various TCP connection properties to try out the policies.
+.PP
+.SH "FORMAT OF OFFLOAD POLICIES"
+Offload policies are specified in an ASCII file consisting of an unlimited
+numbed of policy rules.  Blank lines are ignored and comments are introduced by
+\fB#\fR.  Each rule consists of a filter part, which determines
+what connections the policy applies to, and a settings part, which determines
+whether matching connections will be offloaded and, if so, with what settings.
+The two parts are separated by \fB=>\fR, i.e., the general form of a rule is
+.PP
+.RS
+\fIfilter\fR \fB=>\fR \fIsettings\fR.
+.RE
+.PP
+Filter expressions, which resemble tcpdump(1) patterns, are made up of
+primary expressions.  The following primary expressions are recognized:
+.TP
+[\fIqual\fR] \fBhost\fR \fIipaddr\fR
+\fIipaddr\fR is an IP address and \fIqual\fR is one of \fBsrc\fR,
+\fBdst\fR, \fBsrc or dst\fR, or \fBsrc and dst\fR.  If no qualifier is supplied
+it defaults to \fBsrc or dst\fR.  \fBdest\fR is a synonym for \fBdst\fR.
+Matches connections with the given source/destination addresses or listening
+sockets bound to the given address.
+
+The source of a connection is considered the initiating side, i.e., the sender
+of the SYN that starts the connection, and the destination is the recipient of
+the SYN.  The \fBsrc\fR qualifier matches attributes of a connection's source
+and \fBdst\fR matches destination attributes.  A listening socket is
+considered
+bound to its source and its bound attributes are matched by \fBsrc\fR.
+.TP
+[\fIqual\fR] \fBnet\fR \fInetaddr\fR
+\fInetaddr\fR is an IP network address in either CIDR notation
+(\fBaddr\fR/\fBprefix\fR) or \fBaddr mask prefix\fR, and \fIqual\fR is as for
+\fBhost\fR.  Matches connections from/to the given network.
+.TP
+[\fIqual\fR] \fBport\fR \fIport\fR
+\fIport\fR is a TCP port number or name listed in \fB/etc/services\fR, and
+\fIqual\fR is as for \fBhost\fR.  Matches connections with the given
+source/destination ports.
+.TP
+\fBvers\fR \fIipversion\fR
+matches connections of the given IP version.
+.TP
+\fBtos\fR \fIvalue\fR
+matches connections with the given 8-bit TOS value.
+.TP
+\fBdscp\fR \fIvalue\fR
+matches connections with the given 6-bit DSCP value.
+.TP
+\fBvlan\fR \fIvalue\fR
+matches connections using the given VLAN tag (0-4095).
+.TP
+\fBlisten\fR
+matches listening sockets for incoming TCP SYNs.  Note that this only
+applies to the listening socket, not to any socket created from the
+listening socket via an \fBaccept\fR(2) call.  To match those cloned
+sockets, a rule with a \fBpopen\fR clause would be necessary.
+.TP
+\fBaopen\fR
+matches active opens.
+.TP
+\fBpopen\fR
+matches passive opens.
+.TP
+\fBmark\fR \fIvalue\fR
+matches sockets with the given mark (as specified with the socket option
+SO_MARK).
+.PP
+Primitive expressions can be combined with the operators \fBnot\fR, \fBand\fR,
+\fBor\fR, and the ternary operator \fB?:\fR, listed in order of decreasing
+precedence.  \fB!\fR, \fB&&\fR, and \fB||\fR, are synonyms for the first three,
+respectively.  Expressions can be parenthesized with \fB()\fR.
+
+All primitives that accept a value take an optional comparison operator \fB==\fR
+or \fB!=\fR.  The default is \fB==\fR.  Primitives with integer values
+additionally can use inequality comparison operators \fB<\fR, \fB<=\fR, \fB>\fR,
+and \fB>=\fR.  These primitives also allow an optional mask of the form
+\fB&\fR \fImask\fR before the relational operator.
+
+Note that you can omit a lot of this syntax, e.g., \fBand\fR can often be left
+out and repetitive qualifiers can be combined (see the examples below).
+
+As a special case the filters \fB\-\fR, \fBall\fR, and \fBany\fR match all
+connections.
+
+Offload settings determine whether connections are offloaded and some per
+connection properties of those offloaded.  The following settings can be
+specified:
+.TP
+\fBoffload\fR
+specifies that connections should be offloaded.  It can be preceded by
+\fBnot\fR or its synonym \fB!\fR to disable offloading.
+.TP
+\fBddp\fR
+selects Direct Data Placement for a connection.
+Preceded by \fBnot\fR or \fB!\fR it disables DDP.
+.TP
+\fBtstamp\fR or \fBtimestamp\fR
+specifies that a connection should negotiate TCP timestamps.
+Preceded by \fBnot\fR or \fB!\fR it disables timestamps.
+.TP
+\fBcoalesce\fR
+specifies that Receive Coalescing should be used (this is the default).
+Preceded by \fBnot\fR or \fB!\fR it disables Receive Coalescing.
+.TP
+\fBsack\fR
+specifies that a connection should negotiate TCP SACK.
+Preceded by \fBnot\fR or \fB!\fR it disables SACK.
+.TP
+\fBbind\fR \fIqueuenum\fR
+binds connections to the specified queue.  The special value \fBrandom\fR
+selects a random queue.  The special value \fBcpu\fR selects a queue determined
+by the CPU id where the active or passive open is processed.
+.TP
+\fBclass\fR \fInum\fR
+associates connections with the given scheduling class.
+.TP
+\fBcong\fR \fIcongestion_algorithm\fR
+specifies that connection should use the given TCP congestion algorithm.
+Possible values are \fBreno\fR, \fBtahoe\fR, \fBnewreno\fR, and
+\fBhighspeed\fR.
+.PP
+Note that all settings keywords are logically orthogonal \(em i.e. each
+setting desired must be explicitly specified.  For instance, in order to
+specify that a rule should result in an offloaded DDP connection, both the
+\fBoffload\fR and \fBddp\fR keywords nust be used. Also note that specific
+hardware may not (and probably won't) support all possible settings
+combinations, or may have different valid ranges, etc.  \fBoffload\fR is
+always understood.  If no settings are specified \fB!offload\fR is assumed.
+Consult the documentation for the hardware to determine which settings
+combinations are allowed.
+.PP
+Note that loading a new COP cannot retroactively revoke offloading decisions
+made by previous COPs.  Think of this as \fIStare decisis\fR.  In order to
+reverse earlier offload decisions, the existing offloaded services must be
+restarted with the new COP in effect.
+.SH ADAPTER-SPECIFIC NOTES: CHELSIO T3
+\fBChelsio T3-based adapters\fR do not support offloading IPv6 connections.
+Only offloading adapters (those with TCAMs) can support offloading; thus
+attempts to set offload policies on non-offload adapters will be rejected.
+The parameter to the \fBclass\fR setting is limited to
+\fB0\fR..\fB(8/nports)-1\fR.  Policy rules involving \fBtstamp\fR and
+\fBsack\fR are not supported.  It is not possible to \fInot\fR
+offload incoming passive opens (i.e. push selected incoming passive open
+connections to the Host Stack).  As a result, \fIall\fR incoming passive
+open connections will be offloaded regardless of the \fIsettings\fR
+\fBoffload\fR value.
+.SH ADAPTER-SPECIFIC NOTES: CHELSIO T4/T5/T6
+The parameter to the \fBclass\fR setting is limited to \fB0\fR..\fB15\fR.
+Policy rules involving \fBtstamp\fR and \fBsack\fR are not supported.
+.SH MANAGING OFFLOAD DECISIONS PRIOR TO LOADING A COP
+By default, absent a loaded Connection Offload Policy (COP), the Linux
+\fBT3\fR and \fT4\fP offload driver modules (\fBt3_tom\fR and \fBt4_tom\fR,
+respectively) automatically offload all connections and listeners of which
+they are capable.  This leads to a "Chicken and Egg" problem where the
+offload modules are loaded and start offloading connections and listeners
+\fIbefore\fR a COP can be loaded.
+.PP
+In order to address this issue, the \fBt3_tom\fR and \fBt4_tom\fR driver
+modules support a \fBcop_managed_offloading\fR module parameter which
+controls their default offloading behavior.  When the offload driver modules
+are loaded into the kernel with \fBcop_managed_offloading\fR set to a
+non-zero value, all connection offloading decisions are managed under the
+sole purview of a COP.  As a consequence, if there is no COP loaded, then no
+connections, listeners, etc. will be offloaded.  And thus, when the offload
+driver modules are first loaded and \fBcop_managed_offloading\fR is set, no
+offloading will be done until the first COP is loaded.  See
+\fBmodprobe.conf\fR(5) for information on how to establish default Linux
+module load parameters.
+.SH EXAMPLES
+\fBlisten => offload\fR
+.br
+\fBpopen && dst port 5001 => offload\fR
+
+.B src host 102.50.50.1 => offload bind 0
+
+.B dst host 167.32.1.3 => !offload
+
+.B host 68.3.127.238 or 68.3.127.239 => offload bind 7 !ddp class 1
+
+.B dst net 168.192/16 or 121.101.2/24 => offload class 2 cong highspeed
+
+.B src host 102.60.60.3 and dst net 10.10/16 => !offload
+
+.B dst port 22 or 23 => offload bind 3
+
+.B dst port http and dst net 10.4/16 => offload class 4 bind 6
+
+.B src and dst port 80 => not offload
+
+.B vers 6 => !offload
+
+.B listen and (src port http or nfs) => offload
+
+.B listen and src port & 0xfc00 = 0 => offload
+
+.B dst port nfs && dscp != 0 && popen=> offload class 3 !!!ddp
+
+.B dst net 168.192/16 and mark 12 => offload
+.SH BUGS
+None known.
+.SH "SEE ALSO"
+.BR modprobe.conf (5),
+.BR tcpdump (8).
+.SH "AUTHOR"
+.B cop
+was written by Dimitris Michailidis.
+.SH "AVAILABILITY"
+.B cop
+is available from Chelsio Communications.

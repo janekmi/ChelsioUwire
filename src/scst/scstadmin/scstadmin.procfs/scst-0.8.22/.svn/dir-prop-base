@@ -1,0 +1,18 @@
+K 10
+svn:ignore
+V 25
+blib
+Makefile
+pm_to_blib
+
+K 13
+svn:mergeinfo
+V 547
+/branches/1.0.1.x/scstadmin/scst-0.7.4:731
+/branches/ibmvstgt-port/scstadmin/scstadmin.procfs/scst-0.8.22:2395,2398,2508-2511,2552,2559,2566,2585,2677,2680-2681,2723
+/branches/pr/scstadmin/scst-0.8.22:1584-1713
+/branches/srpt-separate-rx-tx-buffers/scstadmin/scstadmin.procfs/scst-0.8.22:2384-2441
+/branches/srpt-separate-rx-tx-buffers-2/scstadmin/scstadmin.procfs/scst-0.8.22:2381-2383
+/branches/sysfs-changes/scstadmin/scstadmin.procfs/scst-0.8.22:2896-2897,2901
+/branches/sysfs-tree-changes/scstadmin/scstadmin.procfs/scst-0.8.22:2972,3129,3142
+END

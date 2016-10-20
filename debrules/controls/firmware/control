@@ -1,0 +1,8 @@
+Package: chelsio-series4-firmware
+Section: Kernels
+Version: 2.12.0.3 
+Priority: optional
+Architecture: any
+Maintainer: Chelsio Communications <support@chelsio.com>
+Depends: coreutils
+Description: Chelsio Terminator Firmware package for Linux

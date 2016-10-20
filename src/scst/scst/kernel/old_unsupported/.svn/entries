@@ -1,0 +1,40 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/scst/kernel/old_unsupported
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2008-05-14T17:20:20.285273Z
+371
+vlnb
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+26_scst-2.6.14-.patch
+file
+
+
+
+
+2014-04-10T13:32:39.000000Z
+63c37f9f289eba9590816e0240be6f33
+2007-07-05T14:39:37.048888Z
+143
+vlnb
+

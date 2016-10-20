@@ -1,0 +1,18 @@
+K 10
+svn:ignore
+V 5
+TAGS
+
+K 13
+svn:mergeinfo
+V 354
+/branches/1.0.1.x:731
+/branches/ibmvstgt-port:2395,2398,2508-2511,2552,2559,2566,2585,2677,2680-2681,2723
+/branches/pr:1584-1713
+/branches/srpt-separate-rx-tx-buffers:2384-2441
+/branches/srpt-separate-rx-tx-buffers-2:2381-2383
+/branches/sysfs:787-1227
+/branches/sysfs-changes:2896-2897,2901
+/branches/sysfs-tree-changes:2972,3129,3142
+/trunk/scripts:2370
+END

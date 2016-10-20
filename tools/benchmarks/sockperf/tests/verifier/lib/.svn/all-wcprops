@@ -1,0 +1,53 @@
+K 25
+svn:wc:ra_dav:version-url
+V 56
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib
+END
+UPP.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/UPP.pm
+END
+TUL.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TUL.pm
+END
+TPB.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TPB.pm
+END
+UUL.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/UUL.pm
+END
+UPB.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/UPB.pm
+END
+TTP.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TTP.pm
+END
+UTP.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/UTP.pm
+END
+TPP.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TPP.pm
+END

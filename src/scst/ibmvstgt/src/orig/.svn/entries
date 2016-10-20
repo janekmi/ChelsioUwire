@@ -1,0 +1,34 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/ibmvstgt/src/orig
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2010-11-06T11:01:34.863618Z
+2619
+bvassche
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+2.6.35
+dir
+
+2.6.36
+dir
+

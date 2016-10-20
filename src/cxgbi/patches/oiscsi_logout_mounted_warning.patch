@@ -1,0 +1,54 @@
+diff --git a/usr/session_mgmt.c b/usr/session_mgmt.c
+index 2208d82..dac4f2f 100644
+--- a/usr/session_mgmt.c
++++ b/usr/session_mgmt.c
+@@ -23,6 +23,7 @@
+ #include <stdio.h>
+ #include <errno.h>
+ #include <unistd.h>
++#include <mntent.h>
+ 
+ #include "idbm.h"
+ #include "list.h"
+@@ -294,6 +295,32 @@ int iscsi_logout_portal(struct session_info *info, struct list_head *list)
+ 	return 0;
+ }
+ 
++static void check_mounted_luns(void *data, int host_no, int target, int lun)
++{
++        FILE *fp;
++        struct mntent *fstab;
++        char *blockdev;
++
++#ifndef _PATH_MOUNTED
++#define _PATH_MOUNTED   "/etc/mtab"
++#endif
++        fp = setmntent(_PATH_MOUNTED, "r");
++        if (fp == NULL) {
++                printf("Warning : LUN mount check failed !\n");
++                return;
++        }
++
++        blockdev = iscsi_sysfs_get_blockdev_from_lun(host_no, target, lun);
++        if (blockdev) {
++	        while ((fstab = getmntent(fp)) != NULL) {
++			if (!memcmp(blockdev,fstab->mnt_fsname + 5,3))
++				printf ("Warning : iSCSI device %s was mounted while logging out !\n",fstab->mnt_fsname);
++	        }
++                free(blockdev);
++        }
++	fclose(fp);
++}
++
+ /**
+  * iscsi_logout_portals - logout portals
+  * @data: data to pass to iter logout_fn
+@@ -330,6 +357,8 @@ int iscsi_logout_portals(void *data, int *nr_found, int wait,
+ 
+ 	*nr_found = 0;
+ 	list_for_each_entry(curr_info, &session_list, list) {
++		iscsi_sysfs_for_each_device(NULL, iscsi_sysfs_get_host_no_from_sid(curr_info->sid, &err), curr_info->sid,
++                                            check_mounted_luns);
+ 		err = logout_fn(data, &logout_list, curr_info);
+ 		if (err > 0 && !ret)
+ 			ret = err;

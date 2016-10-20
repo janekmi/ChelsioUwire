@@ -1,0 +1,9 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+## Update module dependencies.
+depmod
+exit 0
+

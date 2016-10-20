@@ -1,0 +1,15 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+lib="/usr/lib"
+
+if [ -f  ${lib}/libwdtoe.so ]; then
+    unlink ${lib}/libwdtoe.so;
+fi
+if [ -f ${lib}/libwdtoe.so.1 ]; then
+    unlink ${lib}/libwdtoe.so.1;
+fi
+
+exit 0

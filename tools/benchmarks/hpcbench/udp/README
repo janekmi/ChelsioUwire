@@ -1,0 +1,84 @@
+udpserver/udptest -- A UDP communication benchmark
+
+UDP Round Trip Time (latency) test is just a UDP version of "ping". RTT is too short to be
+measured in HPC environments, so we repeat RTT test many times and get the average of RTTs.
+
+A UPD throughput test is done when both of the conditions are satisfied: message size AND 
+test time. So the actual size of sent message could be greater than the message size you 
+specify if the test time is large.
+
+In UPD througput tests, message size (-m option) specifies the total amount of data to be 
+sent. Messages are actually sent by small pieces (defined by -d option) that must be smaller 
+than datagram (packet) size. In exponential tests, the sending size increases exponentially 
+from 1 byte to the datagram (packet) size; while in the fixed-size tests, the size of each 
+sending is always the same as datagram (packet) size. Most systems have a 64KB maximum size 
+limit of UDP datagram (packet).
+
+UDP traffic generator keeps sending UDP packets to a remote host that is unnecessary running
+as server. Better to pick an unused port for this test. You can specify the througput to be 
+sent (-T option). Be aware that this test may affect target host's performance.
+
+If CPU and system monitoring option (-c) is defined, both client and server's CPU usages 
+(Maximum 8 CPUs supported for SMP systems), network interface statistics and its interrupts 
+to each CPU will be recorded. Currently this option is only available for Linux system.
+
+udpserver usage: udpserver [options]
+ % udpserver [-v] [-p port]
+ [-p] Port number for TCP listening (0 picked by system), 5678 by default.
+ [-v] Verbose mode. Disable by default.
+
+udptest usage: udptest -h host [options]
+ % udptest -h host [-vacdeiP] [-p port] [-A rtt] [-b buffer] [-B buffer] [-m msssage] [-q qos]
+                   [-l datagram] [-d data] [-t time] [-r repeat] [-o output] [-T throughput]
+ [-a] UDP Round Trip Time (RTT or latency) test.
+ [-A rtt-size] UDP RTT (latency) test with specified message size.
+ [-b buffer] Client UDP buffer size in bytes. Using system default value if not defined.
+ [-B buffer] Server UDP buffer size in bytes. The same as cleint's by default.
+ [-c] CPU log option. Tracing system info during the test. Only available when output is defined.
+ [-d data-size] Data size of each read/write in bytes. The same as packet size by default.
+ [-e] Exponential test (data size of each sending increasing from 1 byte to packet size).
+ [-g] UDP traffic generator (Keep sending data to a host). Work without server's support.
+ [-h host] Hostname or IP address of UDP server. Must be specified.
+ [-i] Bidirectional UDP throuhgput test. Default is unidirection stream test.
+ [-l datagram] UDP datagram (packet) size in bytes ( < udp-buffer-szie ). 1460 by default.
+ [-m message] Total message size in bytes. 1048576 by default.
+ [-o output] Output file name.
+ [-p port] Port number of UDP server. 5678 by default.
+ [-P] Write the plot file for gnuplot. Only enable when the output is specified. 
+ [-q qos] Define the TOS field of IP packets. Six values can be used for this setting:
+     1:(IPTOS)-Minimize delay 2:(IPTOS)-Maximize throughput 
+     3:(DiffServ)-Class1 with low drop probability 4:(DiffServ)-class1 with high drop probability
+     5:(DiffServ)-Class4 with low drop probabiltiy 6:(DiffServ)-Class4 with high drop probabiltiy
+ [-r repeat] Repetition of tests. 10 by default.
+ [-t time] Test time constraint in seconds. 5 by default.
+ [-T throughput] Throughput constraint for UDP generator or throughput test. Unlimited by default.
+ [-v] Verbose mode. Disable by default.
+ Note: Input (except -T) supports the postfix of "kKmM". 1K=1024, 1M=1024x1024.
+ Throughput constraint option (-T): 1K=1000, 1M=1000000.
+
+Examples
+
+ 1. Start server process
+ [server] % udpserver
+
+ 2. Start client process
+ [client] % udptest -ah server
+ UDP Round Trip Time (latency) test.
+
+ [client] % udptest -h server
+ UDP throughput test with default set of parameters
+ Port-number: 5678, test-time: 5, test-repeat: 10.
+ Message-size: 1048576, packet-size: 1460, send-size: 1460
+
+ [server] % udpserver -p 3000
+ [client] % udptest -vh server -p 3000 -b 1M -m 10m -l 20k -t 2 -r 20 -o output.txt
+ Repeat throughput tests by 20 times with communication port of 3000; 
+ store results in "output.txt".
+ Buffer-size: 1MB, message-size: 10MB, test-time: 2 Seconds, packet-size: 20KB
+
+ [client] % udptest -eP -h server -b 100k -o output.txt
+ Exponential throughput test for buffer size of 100KB, writing output and plot files.
+
+ When an "output" file is specified, an "output.plot" file will also be created for
+ plotting. Use "gnuplot ouput.plot" to plot the data.
+

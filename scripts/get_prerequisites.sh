@@ -1,0 +1,214 @@
+#!/bin/bash
+prelist=
+if [ $2 == 0 ]; then 
+    echo $prelist 
+    exit 0
+fi;
+bonding_flag=$3
+prerequisites_matrix="toe|nic_offload
+                      toe_ipv4|nic_ipv4
+                      bypass|ba_tools:tools
+                      iwarp|nic_offload:libs
+                      nic_offload|tools
+                      nic|tools
+                      udp_offload|nic_offload:bonding
+                      fcoe_full_offload_initiator|nic_offload
+		      iscsi_full_offload_initiator|fcoe_full_offload_initiator
+                      iscsi_pdu_initiator|nic_offload
+                      sniffer|iwarp
+                      wdtoe|tools
+                      fcoe_pdu_offload_target|nic_offload:scst_chfcoe_install
+                      nic_install|removeallPrevious:nic_rpm:tools_install
+                      nic_offload_install|removeallPrevious:nic_offload_rpm:tools_install
+                      nic_ipv4_install|removeallPrevious:nic_ipv4_rpm:tools_install
+                      vnic_install|removeallPrevious:vnic_rpm:tools_install
+                      toe_install|nic_offload_install:toe_rpm
+                      wdtoe_install|removeallPrevious:wdtoe_rpm:wdtoe_libs_install:tools_install
+                      wdtoe_libs_install|wdtoe_libs_rpm
+                      toe_ipv4_install|nic_ipv4_install:toe_ipv4_rpm
+                      ipv6_install|nic_offload_install:ipv6_rpm
+                      bypass_install|removeallPrevious:bypass_rpm:tools_install:ba_tools_install
+                      iwarp_install|nic_offload_install:iwarp_rpm
+                      libs_install|libs_rpm                  
+                      udp_offload_install|nic_offload_install:bonding_install:udp_offload_rpm
+                      sniffer_install|nic_offload_install:iwarp_install:sniffer_rpm
+                      fcoe_full_offload_initiator_install|nic_offload_install:fcoe_full_offload_initiator_rpm
+		      iscsi_full_offload_initiator_install|fcoe_full_offload_initiator_install
+                      iscsi_pdu_initiator_install|nic_offload_install:iscsi_pdu_initiator_rpm
+                      fcoe_pdu_offload_target_install|nic_offload_install:fcoe_pdu_offload_target_rpm
+                      tools_install|removetools:tools_rpm
+                      bypass_uninstall|ba_tools_uninstall
+                      iwarp_uninstall|libs_uninstall
+		      iscsi_full_offload_initiator_uninstall|fcoe_full_offload_initiator_uninstall
+                      nic_ipv4_rpm|nic_ipv4:firmware_rpm
+                      nic_rpm|nic:firmware_rpm
+                      vnic_rpm|vnic
+                      wdtoe_rpm|wdtoe:firmware_rpm:wdtoe_libs_rpm
+                      toe_ipv4_rpm|nic_ipv4_rpm:toe_ipv4:firmware_rpm
+                      bypass_rpm|bypass:ba_tools_rpm:firmware_rpm
+                      ipv6_rpm|nic_offload_rpm:ipv6:firmware_rpm
+                      iwarp_rpm|nic_offload_rpm:iwarp:libs_rpm:firmware_rpm
+                      udp_offload_rpm|nic_offload_rpm:bonding_rpm:udp_offload
+                      sniffer_rpm|sniffer:iwarp_rpm
+                      fcoe_full_offload_initiator_rpm|fcoe_full_offload_initiator:nic_offload_rpm
+		      iscsi_full_offload_initiator_rpm|fcoe_full_offload_initiator_rpm
+                      iscsi_pdu_initiator_rpm|nic_offload_rpm:iscsi_pdu_initiator:firmware_rpm
+                      fcoe_pdu_offload_target_rpm|nic_offload_rpm:scst_chfcoe_install:fcoe_pdu_offload_target:firmware_rpm
+                      rdma_block_device|iwarp
+                      rdma_block_device_rpm|iwarp_rpm:firmware_rpm:rdma_block_device
+                      rdma_block_device_install|nic_offload_install:iwarp_install:rdma_block_device_rpm
+                      "
+if [ ${bonding_flag} -eq 1 ] ; then
+	prerequisites_matrix+="nic_offload_rpm|nic_offload:firmware_rpm
+                      toe_rpm|toe:nic_offload_rpm:firmware_rpm
+                      bonding_rpm|bonding:toe_rpm:firmware_rpm
+                      bonding_install|removeallPrevious:bonding_rpm:tools_install
+                      iscsi_pdu_target|bonding
+                      iscsi_pdu_target_install|bonding_install:iscsi_pdu_target_rpm
+                      iscsi_pdu_target_rpm|iscsi_pdu_target:bonding_rpm
+"
+else 
+	prerequisites_matrix+="nic_offload_rpm|nic_offload:firmware_rpm
+                      toe_rpm|nic_offload_rpm:toe:firmware_rpm
+                      iscsi_pdu_target|toe
+                      iscsi_pdu_target_install|nic_offload_install:toe_install:iscsi_pdu_target_rpm
+                      iscsi_pdu_target_rpm|iscsi_pdu_target:toe_rpm
+"
+fi;
+
+if [ $4 == 1 ]; then
+	prerequisites_matrix="toe|nic_offload
+                      toe_ipv4|nic_ipv4
+                      bonding|toe
+                      bypass|ba_tools
+                      iwarp|nic_offload:libs
+                      udp_offload|nic_offload:bonding
+                      fcoe_full_offload_initiator|nic_offload
+                      iscsi_full_offload_initiator|fcoe_full_offload_initiator
+                      iscsi_pdu_target|toe
+                      iscsi_pdu_initiator|nic_offload
+                      sniffer|iwarp
+                      nic_install|removeallPrevious:tools_install
+                      nic_offload_install|removeallPrevious:tools_install:nic_offload
+                      nic_ipv4_install|removeallPrevious:tools_install:nic_ipv4
+                      bonding_install|toe_install:bonding
+                      vnic_install|removeallPrevious:vnic:tools_install
+                      toe_install|nic_offload_install:toe
+                      wdtoe_install|removeallPrevious:tools_install:wdtoe_libs_install
+                      toe_ipv4_install|nic_ipv4_install:toe_ipv4
+                      ipv6_install|nic_offload_install:ipv6
+                      bypass_install|removeallPrevious:tools_install:bypass:ba_tools_install
+                      iwarp_install|nic_offload_install:iwarp:libs_install:libs_debug_install
+                      libs_install|libs
+                      udp_offload_install|nic_offload_install:bonding_install:udp_offload
+                      sniffer_install|nic_offload_install:libs_install:libs_debug_install:sniffer
+                      fcoe_full_offload_initiator_install|nic_offload_install:fcoe_full_offload_initiator
+                      iscsi_full_offload_initiator_install|fcoe_full_offload_initiator_install
+                      iscsi_pdu_target_install|nic_offload_install:toe_install:iscsi_pdu_target
+                      iscsi_pdu_initiator_install|nic_offload_install:iscsi_pdu_initiator
+                      tools_install|removetools:tools
+                      bypass_uninstall|ba_tools_uninstall
+                      iwarp_uninstall|libs_uninstall
+                      iscsi_full_offload_initiator_uninstall|fcoe_full_offload_initiator_uninstall
+                      nic_offload_rpm|nic_offload:firmware_rpm
+                      nic_ipv4_rpm|nic_ipv4:firmware_rpm
+                      nic_rpm|nic:firmware_rpm
+                      vnic_rpm|vnic
+                      toe_rpm|nic_offload_rpm:toe:firmware_rpm
+                      toe_ipv4_rpm|nic_ipv4_rpm:toe_ipv4:firmware_rpm
+                      wdtoe_rpm|wdtoe:firmware_rpm:wdtoe_libs_rpm
+                      bypass_rpm|bypass:ba_tools_rpm:firmware_rpm
+                      ipv6_rpm|nic_offload_rpm:ipv6:firmware_rpm
+                      iwarp_rpm|nic_offload_rpm:iwarp:libs_rpm:firmware_rpm
+                      udp_offload_rpm|nic_offload_rpm:bonding_rpm:udp_offload
+                      sniffer_rpm|sniffer:iwarp_rpm
+                      bonding_rpm|toe_rpm:bonding:firmware_rpm
+                      fcoe_full_offload_initiator_rpm|fcoe_full_offload_initiator:nic_offload_rpm
+                      rdma_block_device|iwarp
+                      rdma_block_device_rpm|iwarp_rpm:firmware_rpm:rdma_block_device
+                      rdma_block_device_install|nic_offload_install:iwarp_install:rdma_block_device_rpm
+                      iscsi_full_offload_initiator_rpm|fcoe_full_offload_initiator_rpm
+                      iscsi_pdu_target_rpm|iscsi_pdu_target
+                      iscsi_pdu_initiator_rpm|nic_offload_rpm:iscsi_pdu_initiator:firmware_rpm"
+fi;
+if [ -f /usr/bin/dpkg ]; then \
+	prerequisites_matrix="toe|nic_offload
+                      toe_ipv4|nic_ipv4
+                      bypass|ba_tools:tools
+                      iwarp|nic_offload:libs
+                      nic_offload|tools
+                      nic|tools
+                      udp_offload|nic_offload:bonding
+                      fcoe_full_offload_initiator|nic_offload
+                      iscsi_full_offload_initiator|fcoe_full_offload_initiator
+                      iscsi_pdu_initiator|nic_offload
+                      sniffer|iwarp
+                      wdtoe|tools
+                      fcoe_pdu_offload_target|nic_offload:scst_chfcoe_install
+                      nic_install|removeallPrevious:nic_deb:tools_install
+                      nic_offload_install|removeallPrevious:nic_offload_deb:tools_install
+                      nic_ipv4_install|removeallPrevious:nic_ipv4_deb:tools_install
+                      vnic_install|removeallPrevious:vnic_deb:tools_install
+                      toe_install|nic_offload_install:toe_deb
+                      wdtoe_install|removeallPrevious:wdtoe_deb:wdtoe_libs_install:tools_install
+                      wdtoe_libs_install|wdtoe_libs_deb
+                      toe_ipv4_install|nic_ipv4_install:toe_ipv4_deb
+                      ipv6_install|nic_offload_install:ipv6_deb
+                      bypass_install|removeallPrevious:bypass_deb:tools_install:ba_tools_install
+                      iwarp_install|nic_offload_install:iwarp_deb
+                      libs_install|libs_deb                  
+                      udp_offload_install|nic_offload_install:bonding_install:udp_offload_deb
+                      sniffer_install|nic_offload_install:iwarp_install:sniffer_deb
+                      fcoe_full_offload_initiator_install|nic_offload_install:fcoe_full_offload_initiator_deb
+                      iscsi_full_offload_initiator_install|fcoe_full_offload_initiator_install
+                      iscsi_pdu_initiator_install|nic_offload_install:iscsi_pdu_initiator_deb
+                      fcoe_pdu_offload_target_install|nic_offload_install:fcoe_pdu_offload_target_deb
+                      tools_install|removetools:tools_deb
+                      bypass_uninstall|ba_tools_uninstall
+                      iwarp_uninstall|libs_uninstall
+                      iscsi_full_offload_initiator_uninstall|fcoe_full_offload_initiator_uninstall
+                      nic_ipv4_deb|nic_ipv4:firmware_deb
+                      nic_deb|nic:firmware_deb
+                      vnic_deb|vnic
+                      wdtoe_deb|wdtoe:firmware_deb:wdtoe_libs_deb
+                      toe_ipv4_deb|nic_ipv4_deb:toe_ipv4:firmware_deb
+                      bypass_deb|bypass:ba_tools_deb:firmware_deb
+                      ipv6_deb|nic_offload_deb:ipv6:firmware_deb
+                      iwarp_deb|nic_offload_deb:iwarp:libs_deb:firmware_deb
+                      udp_offload_deb|nic_offload_deb:bonding_deb:udp_offload
+                      sniffer_deb|sniffer:iwarp_deb
+                      fcoe_full_offload_initiator_deb|fcoe_full_offload_initiator:nic_offload_deb
+                      iscsi_full_offload_initiator_deb|fcoe_full_offload_initiator_deb
+                      iscsi_pdu_initiator_deb|nic_offload_deb:iscsi_pdu_initiator:firmware_deb
+                      fcoe_pdu_offload_target_deb|nic_offload_deb:scst_chfcoe_install:fcoe_pdu_offload_target:firmware_deb
+                      rdma_block_device|iwarp
+                      rdma_block_device_deb|iwarp_deb:firmware_deb:rdma_block_device
+                      rdma_block_device_install|nic_offload_install:iwarp_install:rdma_block_device_deb
+"
+if [ ${bonding_flag} -eq 1 ] ; then
+	prerequisites_matrix+="nic_offload_deb|nic_offload:firmware_deb
+                      toe_deb|toe:nic_offload_deb:firmware_deb
+                      bonding_deb|bonding:toe_deb:firmware_deb
+                      bonding_install|removeallPrevious:bonding_deb:tools_install
+                      iscsi_pdu_target|bonding
+                      iscsi_pdu_target_install|bonding_install:iscsi_pdu_target_deb
+                      iscsi_pdu_target_deb|iscsi_pdu_target:bonding_deb
+"
+else 
+	prerequisites_matrix+="nic_offload_deb|nic_offload:firmware_deb
+                      toe_deb|nic_offload_deb:toe:firmware_deb
+                      iscsi_pdu_target|toe
+                      iscsi_pdu_target_install|nic_offload_install:toe_install:iscsi_pdu_target_deb
+                      iscsi_pdu_target_deb|iscsi_pdu_target:toe_deb
+"
+fi;
+fi;
+for entry in ${prerequisites_matrix[*]}; do \
+    proto=$(echo $entry | awk -F"|" '{print $1}'); \
+    if [ $proto  == $1 ]; then \
+        prelist=$(echo $entry | awk -F"|" '{print $2}'); \
+        break; 
+    fi; 
+done;
+prelist=$(echo $prelist | tr ":" " ")
+echo ${prelist[*]}

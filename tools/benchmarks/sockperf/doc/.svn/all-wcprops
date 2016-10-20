@@ -1,0 +1,23 @@
+K 25
+svn:wc:ra_dav:version-url
+V 41
+/svn/!svn/ver/34/branches/sockperf_v2/doc
+END
+Doxyfile
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/svn/!svn/ver/25/branches/sockperf_v2/doc/Doxyfile
+END
+Makefile.am
+K 25
+svn:wc:ra_dav:version-url
+V 53
+/svn/!svn/ver/25/branches/sockperf_v2/doc/Makefile.am
+END
+main.dox
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/svn/!svn/ver/34/branches/sockperf_v2/doc/main.dox
+END

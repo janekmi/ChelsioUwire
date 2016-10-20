@@ -1,0 +1,13 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+lib="/usr/lib"
+
+ln -f -s  ${lib}/libcxgb4_sock_debug.so.1.0.0 ${lib}/libcxgb4_sock_debug.so
+ln -f -s ${lib}/libcxgb4_sock_debug.so.1.0.0 ${lib}/libcxgb4_sock_debug.so.1
+
+/sbin/ldconfig
+
+exit 0

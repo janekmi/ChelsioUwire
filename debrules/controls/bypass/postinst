@@ -1,0 +1,8 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+## Generate new module dependencies.
+depmod
+exit 0

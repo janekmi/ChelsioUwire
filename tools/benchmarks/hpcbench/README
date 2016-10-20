@@ -1,0 +1,42 @@
+This is a benchmark tool for measuring UDP/TCP/MPI communication performance 
+in High Performance Computing (HPC) environments. 
+
+Compilation
+
+Linux : 
+	[~hpcbench/ @node1] % make
+SunOS : uncomment the "#LIB = -lsocket -lnsl" line for each makefile in 
+        ~hpcbench/[udp/tcp/mpi] dirctories, then
+	[~hpcbench/ @node1] % make
+
+Testing
+
+1. UDP latency/throughput tests: 
+	[~hpcbench/udp/ @node1] % ./udpserver &
+        [~hpcbench/udp/ @node2] % ./udptest -h node1 
+   Refer to ~hpcbench/udp/README for more information about the UDP benchmark
+2. TCP latency/throughput tests:
+	[~hpcbench/tcp/ @node1] % ./tcpserver &
+        [~hpcbench/tcp/ @node2] % ./tcptest -h node1 
+   Refer to ~hpcbench/tcp/README for more information about the TCP benchmark
+3. MPI latency/throughput tests:
+	[~hpcbench/mpi/ @node1] % mpirun -np 2 mpitest
+   Refer to ~hpcbench/MPI/README for more information about the MPI benchmark
+ 
+Test scripts
+
+There are several test scripts in ~hpcbench/testscript directory, for scaning 
+a set of parameters of throughput tests between two nodes. For example:
+	[~hpcbench/testscript/ @node1] % ./test.sh tcp node5 node6 
+This will examine the throughputs with different configuration (buffer size, 
+stream and ping-pong, blocking and nonblocking mode, etc.) between two processes,
+inside both node5 and node6, and between node5 and node6. Similarly, 
+	[~hpcbench/testscript/ @node1] % ./test.sh all node5 node6 
+will test all three (UDP/TCP/MPI) protocols automatically.
+
+The scripts of test.lsf and test-all.lsf are designed for HPC's LSF queuing 
+system. Please refer to ~hpcbench/testscript/README for more information.
+
+Extra tool (sys/sysmon):
+Sysmon --  A Linux tool to monitor system's CPU/Memory/Network information.  
+

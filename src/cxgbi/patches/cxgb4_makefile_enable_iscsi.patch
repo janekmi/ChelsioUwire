@@ -1,0 +1,15 @@
+diff --git a/Makefile b/Makefile
+index c3336a3..438cd4b 100644
+--- a/Makefile
++++ b/Makefile
+@@ -558,6 +558,10 @@ ifneq ($(disable_offload),1)
+     FLAGS += -DCONFIG_TCPV6_OFFLOAD
+   endif
+ endif
++
++# enable support of cxgb4i
++FLAGS += -DSCSI_CXGB4_ISCSI
++
+ # For toecore driver module.
+ ifeq ($(disable_toecore),1)
+   FLAGS := $(filter-out -DCONFIG_TCP_OFFLOAD_MODULE,$(FLAGS))

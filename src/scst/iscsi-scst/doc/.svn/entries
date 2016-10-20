@@ -1,0 +1,55 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/iscsi-scst/doc
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-03-02T04:22:00.327680Z
+4780
+vlnb
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+iscsi-scst-howto.txt
+file
+
+
+
+
+2014-04-10T13:32:30.000000Z
+8542216a146df9f1bcfbf6b91636e74b
+2013-03-02T04:22:00.327680Z
+4780
+vlnb
+
+SCST_Gentoo_HOWTO.txt
+file
+
+
+
+
+2014-04-10T13:32:30.000000Z
+e34aa8ba0309e6ada9beb51966a32d8f
+2011-08-19T23:20:22.039524Z
+3823
+vlnb
+
+manpages
+dir
+

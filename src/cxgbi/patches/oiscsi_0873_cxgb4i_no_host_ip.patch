@@ -1,0 +1,13 @@
+diff --git a/usr/transport.c b/usr/transport.c
+index e6e3dfc..e65d4fc 100644
+--- a/usr/transport.c
++++ b/usr/transport.c
+@@ -66,7 +66,7 @@ struct iscsi_transport_template cxgb3i = {
+ 
+ struct iscsi_transport_template cxgb4i = {
+ 	.name		= "cxgb4i",
+-	.set_host_ip	= 1,
++	.set_host_ip	= 0,
+ 	.ep_connect	= ktransport_ep_connect,
+ 	.ep_poll	= ktransport_ep_poll,
+ 	.ep_disconnect	= ktransport_ep_disconnect,

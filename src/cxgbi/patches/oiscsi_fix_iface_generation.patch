@@ -1,0 +1,61 @@
+diff --git a/usr/initiator.c b/usr/initiator.c
+index fa8846d..1b87357 100644
+--- a/usr/initiator.c
++++ b/usr/initiator.c
+@@ -577,9 +577,15 @@ int iscsi_host_set_net_params(struct iface_rec *iface,
+ 
+ 	/* if we need to set the ip addr then set all the iface net settings */
+ 	if (!iface_is_bound_by_ipaddr(iface)) {
+-		log_warning("Please set the iface.ipaddress for iface %s, "
+-			    "then retry the login command.\n", iface->name);
+-		return EINVAL;
++		if(t->template->set_host_ip == SET_HOST_IP_REQ) {
++			log_warning("Please set the iface.ipaddress for iface %s, "
++				    "then retry the login command.\n", iface->name);
++			return EINVAL;
++		} else if(t->template->set_host_ip == SET_HOST_IP_OPT) {
++			log_info("Optional iface.ipaddress for iface %s, "
++                                    "not set.\n", iface->name);
++			return 0;
++		} else 	return EINVAL;
+ 	}
+ 
+ 	rc = host_set_param(t, session->hostno,
+diff --git a/usr/transport.c b/usr/transport.c
+index 5d6bea4..fc85ce7 100644
+--- a/usr/transport.c
++++ b/usr/transport.c
+@@ -45,7 +45,7 @@ struct iscsi_transport_template iscsi_iser = {
+ 
+ struct iscsi_transport_template cxgb3i = {
+ 	.name		= "cxgb3i",
+-	.set_host_ip	= 1,
++	.set_host_ip	= 2,
+ 	.ep_connect	= ktransport_ep_connect,
+ 	.ep_poll	= ktransport_ep_poll,
+ 	.ep_disconnect	= ktransport_ep_disconnect,
+@@ -54,7 +54,7 @@ struct iscsi_transport_template cxgb3i = {
+ 
+ struct iscsi_transport_template cxgb4i = {
+ 	.name		= "cxgb4i",
+-	.set_host_ip	= 1,
++	.set_host_ip	= 2,
+ 	.ep_connect	= ktransport_ep_connect,
+ 	.ep_poll	= ktransport_ep_poll,
+ 	.ep_disconnect	= ktransport_ep_disconnect,
+diff --git a/usr/transport.h b/usr/transport.h
+index 5ceedb3..c12590e 100644
+--- a/usr/transport.h
++++ b/usr/transport.h
+@@ -20,6 +20,11 @@
+ #include "types.h"
+ #include "config.h"
+ 
++enum set_host_ip_opts {
++	SET_HOST_IP_REQ 	= 1,
++	SET_HOST_IP_OPT 	= 2,
++};
++
+ struct iscsi_transport;
+ struct iscsi_conn;
+ 

@@ -1,0 +1,124 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/qla_isp
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-02-16T03:23:32.322859Z
+4759
+vlnb
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+linux
+dir
+
+linux-2.6
+dir
+
+LICENSE
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+096c005146019a9658ec519facf3c100
+2009-08-23T04:10:13.188150Z
+1062
+zorko
+
+ChangeLog
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+067b93c56ecee4c585838c0c18c32320
+2009-10-28T17:30:12.753394Z
+1289
+vlnb
+
+common
+dir
+
+FIRMWARE.readme
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+6cba6fa57c8ff7fc6e6956631ab073bd
+2009-08-23T04:10:13.188150Z
+1062
+zorko
+
+README.scst
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+6477253d96da52372cffa5e99369ce57
+2013-02-16T03:23:32.322859Z
+4759
+vlnb
+
+firmware
+dir
+
+Makefile
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+744bb4ced8f99acf3849e70e6f727d3c
+2008-07-10T06:44:28.361670Z
+451
+swgruszka
+
+README
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+9099126ea352329b0344fe7686a953bd
+2009-05-07T01:52:56.165849Z
+825
+zorko
+
+TAGS
+file
+
+
+
+
+2014-04-10T13:32:34.000000Z
+0e615201671dca459559b539cbe0d4e2
+2009-10-24T15:31:32.821297Z
+1267
+swgruszka
+

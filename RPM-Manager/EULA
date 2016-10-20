@@ -1,0 +1,179 @@
+June 1, 2006
+             CHELSIO END USER LICENSE AGREEMENT
+
+IMPORTANT: PLEASE READ THIS SOFTWARE LICENSE CAREFULLY BEFORE
+DOWNLOADING OR OTHERWISE USING THE SOFTWARE OR ANY ASSOCIATED
+DOCUMENTATION   OR   OTHER   MATERIALS   (COLLECTIVELY,   THE
+"SOFTWARE").  BY CLICKING ON THE "OK" OR "ACCEPT" BUTTON  YOU
+AGREE TO BE BOUND BY THE TERMS OF THIS AGREEMENT.  IF YOU  DO
+NOT  AGREE TO THE TERMS OF THIS AGREEMENT, CLICK THE "DO  NOT
+ACCEPT" BUTTON TO TERMINATE THE INSTALLATION PROCESS.
+
+   1. License.       Chelsio Communications, Inc. ("Chelsio")
+hereby  grants  you, the Licensee, and you hereby  accept,  a
+limited,  non-exclusive, non-transferable license to  install
+and  use  the  Software  with one  or  more  Chelsio  network
+adapters on a single server computer for use in communicating
+with  one  or more other computers over a network.   You  may
+also  make one copy of the Software in machine readable  form
+solely for back-up purposes, provided you reproduce Chelsio's
+copyright  notice and any proprietary legends  included  with
+the Software or as otherwise required by Chelsio.
+
+   2. Restrictions.   This license granted hereunder does not
+constitute  a  sale  of  the Software or  any  copy  thereof.
+Except  as expressly permitted under this Agreement, you  may
+not:  (i)  reproduce, modify, adapt, translate, rent,  lease,
+loan,  resell, distribute, or create derivative works  of  or
+based  upon, the Software or any part thereof; or  (ii)  make
+available the Software, or any portion thereof, in any  form,
+on the Internet.  The Software contains trade secrets and, in
+order  to  protect  them,  you  may  not  decompile,  reverse
+engineer, disassemble, or otherwise reduce the Software to  a
+human-perceivable  form.  You assume full responsibility  for
+the use of the Software and agree to use the Software legally
+and responsibly.
+
+   3. Ownership of Software.    As Licensee, you own only the
+media  upon  which  the Software is recorded  or  fixed,  but
+Chelsio retains all right, title and interest in and  to  the
+Software   and   all  subsequent  copies  of  the   Software,
+regardless  of the form or media in or on which the  Software
+may be embedded.
+
+   4. Confidentiality.  You agree to maintain the Software in
+confidence  and  not  to  disclose  the  Software,   or   any
+information or materials related thereto, to any third  party
+without  the express written consent of Chelsio.  You further
+agree  to take all reasonable precautions to limit access  of
+the  Software only to those of your employees who  reasonably
+require  such access to perform their employment  obligations
+and who are bound by confidentiality agreements with you.
+
+   5. Term.   This license is effective in perpetuity, unless
+terminated  earlier.  You may terminate the  license  at  any
+time  by  destroying  the  Software  (including  the  related
+documentation), together with all copies or modifications  in
+any  form.   Chelsio  may terminate this  license,  and  this
+license shall be deemed to have automatically terminated,  if
+you  fail  to  comply  with any term  or  condition  of  this
+Agreement.   Upon any termination, including  termination  by
+you,  you  must destroy the Software (including  the  related
+documentation), together with all copies or modifications  in
+any form.
+
+   6. Limited Warranty.  If Chelsio furnishes the Software to
+you on media, Chelsio warrants only that the media upon which
+the  Software  is  furnished will be  free  from  defects  in
+material  or workmanship under normal use and service  for  a
+period of thirty (30) days from the date of delivery to  you.
+CHELSIO  DOES  NOT  AND  CANNOT WARRANT  THE  PERFORMANCE  OR
+RESULTS  YOU  MAY OBTAIN BY USING THE SOFTWARE  OR  ANY  PART
+THEREOF.  EXCEPT FOR THE FOREGOING LIMITED WARRANTY,  CHELSIO
+MAKES  NO  OTHER WARRANTIES, EXPRESS OR IMPLIED,  AND  HEREBY
+DISCLAIMS  ALL OTHER WARRANTIES, INCLUDING, BUT  NOT  LIMITED
+TO,  NON-INFRINGEMENT OF THIRD PARTY RIGHTS,  MERCHANTABILITY
+AND  FITNESS  FOR A PARTICULAR PURPOSE.  Some states  do  not
+allow  the exclusion of implied warranties or limitations  on
+how   long  an  implied  warranty  may  last,  so  the  above
+limitations  may  not apply to you. This warranty  gives  you
+specific  legal  rights and you may also  have  other  rights
+which vary from state to state.
+
+   7. Remedy for Breach of Warranty.   The sole and exclusive
+liability of Chelsio and its distributors, and your sole  and
+exclusive  remedy, for a breach of the above warranty,  shall
+be  the  replacement of any media furnished  by  Chelsio  not
+meeting  the above limited warranty and which is returned  to
+Chelsio.  If Chelsio or its distributor is unable to  deliver
+replacement media which is free from defects in materials  or
+workmanship,  you may terminate this Agreement  by  returning
+the Software.
+
+   8. Limitation of Liability. IN NO EVENT SHALL CHELSIO HAVE
+ANY  LIABILITY  TO YOU OR ANY THIRD PARTY FOR  ANY  INDIRECT,
+INCIDENTAL,  SPECIAL,  CONSEQUENTIAL  OR  PUNITIVE   DAMAGES,
+HOWEVER  CAUSED, AND ON ANY THEORY OF LIABILITY, ARISING  OUT
+OF  OR  RELATED  TO  THE  LICENSE OR  USE  OF  THE  SOFTWARE,
+INCLUDING  BUT  NOT  LIMITED TO  LOSS  OF  DATA  OR  LOSS  OF
+ANTICIPATED PROFITS, EVEN IF CHELSIO HAS BEEN ADVISED OF  THE
+POSSIBILITY  OF  SUCH DAMAGES.  IN NO EVENT  SHALL  CHELSIO'S
+LIABILITY ARISING OUT OF OR RELATED TO THE LICENSE OR USE  OF
+THE  SOFTWARE EXCEED THE AMOUNTS PAID BY YOU FOR THE  LICENSE
+GRANTED    HEREUNDER.    THESE   LIMITATIONS   SHALL    APPLY
+NOTWITHSTANDING  ANY  FAILURE OF  ESSENTIAL  PURPOSE  OF  ANY
+LIMITED REMEDY.
+
+   9. High Risk Activities.       The Software is not  fault-
+tolerant  and  is not designed, manufactured or intended  for
+use  or  resale  as  online equipment  control  equipment  in
+hazardous environments requiring fail-safe performance,  such
+as   in   the  operation  of  nuclear  facilities,   aircraft
+navigation  or  communication systems, air  traffic  control,
+direct  life support machines, or weapons systems,  in  which
+the  failure  of the Software could lead directly  to  death,
+personal injury, or severe physical or environmental  damage.
+Chelsio   specifically  disclaims  any  express  or   implied
+warranty of fitness for any high risk uses listed above.
+
+   10. Export.   You acknowledge that the Software is of U.S.
+origin   and  subject  to  U.S.  export  jurisdiction.    You
+acknowledge  that  the  laws and regulations  of  the  United
+States  and other countries may restrict the export  and  re-
+export  of the Software.  You agree that you will not  export
+or  re-export the Software or documentation in  any  form  in
+violation of applicable United States and foreign  law.   You
+agree  to  comply  with  all  applicable  international   and
+national laws that apply to the Software, including the  U.S.
+Export Administration Regulations, as well as end-user,  end-
+use,  and  destination restrictions issued by U.S. and  other
+governments.
+
+   11. Government Restricted Rights.  The Software is subject
+to  restricted rights as follows. If the Software is acquired
+under  the  terms  of  a GSA contract: use,  reproduction  or
+disclosure  is subject to the restrictions set forth  in  the
+applicable  ADP  Schedule  contract.   If  the  Software   is
+acquired  under  the  terms  of  a  DoD  or  civilian  agency
+contract, use, duplication or disclosure by the Government is
+subject  to  the restrictions of this Agreement in accordance
+with  48 C.F.R. 12.212 of the Federal Acquisition Regulations
+and  its  successors and 49 C.F.R. 227.7202-1 of the DoD  FAR
+Supplement and its successors.
+
+   12. General.     You acknowledge that you have  read  this
+Agreement, understand it, and that by using the Software  you
+agree  to be bound by its terms and conditions.  You  further
+agree that it is the complete and exclusive statement of  the
+agreement  between  Chelsio  and  you,  and  supersedes   any
+proposal  or prior agreement, oral or written, and any  other
+communication between Chelsio and you relating to the subject
+matter  of  this Agreement.  No additional or  any  different
+terms  will  be  enforceable against Chelsio  unless  Chelsio
+gives its express consent, including an express waiver of the
+terms  of this Agreement, in writing signed by an officer  of
+Chelsio.  This Agreement shall be governed by California law,
+except  as to copyright matters, which are covered by Federal
+law.    You   hereby  irrevocably  submit  to  the   personal
+jurisdiction  of,  and  irrevocably waive  objection  to  the
+laying of venue (including a waiver of any argument of  forum
+non  conveniens or other principles of like effect)  in,  the
+state  and  federal  courts located in  Santa  Clara  County,
+California, for the purposes of any litigation undertaken  in
+connection with this Agreement.  Should any provision of this
+Agreement be declared unenforceable in any jurisdiction, then
+such  provision shall be deemed severable from this Agreement
+and  shall not affect the remainder hereof. All rights in the
+Software  not  specifically granted  in  this  Agreement  are
+reserved  by  Chelsio.  You may not assign or  transfer  this
+Agreement  (by  merger, operation of  law  or  in  any  other
+manner) without the prior written consent of Chelsio and  any
+attempt to do so without such consent shall be void and shall
+constitute a material breach of this Agreement.
+
+Should you have any questions concerning this Agreement,  you
+may contact Chelsio by writing to:
+
+Chelsio Communications, Inc.
+370 San Aleso Ave.
+Sunnyvale, CA 94085

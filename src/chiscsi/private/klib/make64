@@ -1,0 +1,12 @@
+SHELL = /bin/bash
+
+#####################################################################
+# Assumptions are basically that all the .c files in the CWD are modules
+# for the library and that all .h files are the interface to the library.
+#####################################################################
+# x64 specific flags
+EXTRA_FLAGS = -m64 -mno-red-zone -mcmodel=kernel -pipe
+
+PLATNAME = x86_64
+
+include ./make_common

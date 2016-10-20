@@ -1,0 +1,40 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/iscsi-scst/kernel/patches/unsupported
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2009-03-23T19:25:38.223621Z
+711
+vlnb
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+put_page_callback-SuSE11-1.patch
+file
+
+
+
+
+2014-04-10T13:32:29.000000Z
+0f8fa23d4177a88747ad9ae26bbf29bb
+2009-03-23T19:25:38.223621Z
+711
+vlnb
+

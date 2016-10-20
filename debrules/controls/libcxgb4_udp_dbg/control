@@ -1,0 +1,8 @@
+Package: libcxgb4-udp-dbg
+Section: libs
+Version: 2.12.0.3 
+Priority: optional
+Architecture: any
+Maintainer: Chelsio Communications <support@chelsio.com>
+Depends: chiwarp (>= 1.1.0.10), libcxgb4 (>= 1.1.0.10)
+Description: libcxgb4 provides a device-specific userspace driver for Chelsio T4 RNICs for use with the libibverbs library.

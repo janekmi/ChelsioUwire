@@ -1,0 +1,127 @@
+#!/bin/bash
+
+ETHTOOL=`which ethtool 2> /dev/null`
+
+if [ -z $ETHTOOL ];
+then
+	echo "ERROR: Please install ethtool utility"
+	exit 1
+fi
+
+# Look for cxgb4 devices
+list_chelsio_dev()
+{
+        list_dev=`/sbin/ip link show | grep mtu | cut -d':' -f2`
+        for dev in $list_dev
+        do
+                desc_dev=`$ETHTOOL -i $dev 2>&1 | grep cxgb4`
+                if [ $? -eq 0 ]; then
+                        echo $dev
+                fi
+        done
+}
+
+echo "Chelsio Setup Rev 1.1"
+echo
+
+modprobe -a cxgb4 toecore t4_tom iw_cxgb4 rdma_ucm
+cxgb4=`lsmod | grep -c ^cxgb4`
+toecore=`lsmod | grep -c ^toecore`
+t4_tom=`lsmod | grep -c ^t4_tom`
+iw_cxgb4=`lsmod | grep -c ^iw_cxgb4`
+rdma_ucm=`lsmod | grep -c ^rdma_ucm`
+mlx4_ib=0
+
+kv1=`uname -r | cut -d. -f1`
+kv2=`uname -r | cut -d. -f2`
+kv3=`uname -r | cut -d. -f3`
+kv3=`echo $kv3 | cut -d- -f1`
+kv3=`echo $kv3 | cut -d_ -f3`
+
+if [ "$kv1" == "2" -a "$kv2" == "6" -a $kv3 -lt 29 ]; then
+        modprobe mlx4_ib 2>/dev/null
+        mlx4_ib=`lsmod | grep -c ^mlx4_ib`
+fi
+
+echo "The following modules are loaded:"
+[ $cxgb4 == 1 ] && echo "cxgb4"
+[ $toecore == 1 ] && echo "toecore"
+[ $t4_tom == 1 ] && echo "t4_tom"
+[ $iw_cxgb4 == 1 ] && echo "iw_cxgb4"
+[ $rdma_ucm == 1 ] && echo "rdma_ucm"
+[ $mlx4_ib  == 1 ] && echo "mlx4_ib"
+echo
+
+t4_perftune.sh
+
+match=0
+int_list=`list_chelsio_dev`
+for dev in $int_list
+do
+	dev_desc=`ethtool -i $dev 2<&1 | grep cxgb4`
+	if [ $? -eq 0 ]; then
+		intc=`expr $intc + 1`
+		intf+=$dev
+		intf+=" "
+	fi
+done
+
+if [ ! -e /etc/libcxgb4_sock.conf ]; then
+        for ((i=1; i<=$intc; i++)); do
+                iface=`echo -n "endpoint {interface="; echo $intf | awk -v var=$i '{print $var}'; echo " port=0}"`
+                echo $iface >> /etc/libcxgb4_sock.conf
+        done
+
+        if [ ! -e /etc/libcxgb4_sock.conf ]; then
+                echo "**WARNING** Unable to create /etc/libcxgb4_sock.conf"
+                exit 1
+        fi
+else
+        for ((i=1; i<=$intc; i++)); do
+                val=`echo $intf | awk -v var=$i '{print $var}'`
+                found=`grep -c $val /etc/libcxgb4_sock.conf`
+                if [ "$found" -ne 0 ]; then
+                        match=1;
+                fi
+        done
+
+        if [ "$match" -eq 0 ]; then
+                for ((i=1; i<=$intc; i++)); do
+                        iface=`echo -n "endpoint {interface="; echo $intf | awk -v var=$i '{print $var}'; echo " port=0}"`
+                        echo $iface >> /etc/libcxgb4_sock.conf
+                done
+        fi
+
+        for ((i=1; i<=$intc; i++)); do
+                val=`echo $intf | awk -v var=$i '{print $var}'`
+                found=`grep -c $val /etc/libcxgb4_sock.conf`
+                if [ "$found" -ne 0 ]; then
+                        match=1;
+                fi
+        done
+
+        if [ "$match" -eq 0 ]; then
+                echo "**WARNING** No Chelsio Interfaces in /etc/libcxgb4_sock.conf to accelerate."
+                exit 1
+        fi
+fi
+
+match=0
+for dev in $intf
+do
+        if [ `cat /sys/class/net/$dev/mtu` -gt 4096 ]; then
+                echo "**WARNING** A Chelsio T4 interface with a MTU greater than 4096 has been detected. WireDirect"
+                echo "does not function with a MTU above 4096. Ensure that the interface being used for WireDirect"
+                echo "has a MTU of 4096 or less."
+                echo ""
+	else
+		match=1
+        fi
+done
+
+if [ "$match" -eq 0 ]; then
+        echo "**WARNING** No Chelsio T4 Interfaces with MTU 4096 or lower found to accelerate with WireDirect."
+        exit 1
+fi
+
+echo "Chelsio setup script for NIC, TOE, iWARP and WireDirect done...."

@@ -1,0 +1,45 @@
+server (sr): Run sockperf as a server.
+
+Usage: sockperf server [options] [args]...
+ sockperf server
+ sockperf server [-i ip] [-p port] [--rx-mc-if ip] [--tx-mc-if ip]
+ sockperf server -f file [-F s/p/e] [--rx-mc-if ip] [--tx-mc-if ip]
+
+Options:
+ -h,-?   --help,--usage       	-Show the help message and exit.
+         --tcp                	-Use TCP protocol (default UDP).
+ -i      --ip                 	-Listen on/send to ip <ip>.
+ -p      --port               	-Listen on/connect to port <port> (default 11111).
+ -f      --file               	-Tread multiple ip+port combinations from file <file> (server uses select).
+ -F      --iomux-type         	-Type of multiple file descriptors handle [s|select|p|poll|e|epoll|r|recvfrom](default select).
+         --timeout            	-Set select/poll/epoll timeout to <msec>, -1 for infinite (default is 10 msec).
+ -a      --activity           	-Measure activity by printing a '.' for the last <N> messages processed.
+ -A      --Activity           	-Measure activity by printing the duration for last <N>  messages processed.
+         --tcp-avoid-nodelay  	-Stop/Start delivering TCP Messages Immediately (Enable/Disable Nagel). Default is Nagel Disabled except in Throughput where the default is Nagel enabled.
+         --tcp-skip-blocking-send
+                              	-Enables non-blocking send operation (default OFF).
+         --mc-rx-if           	-<ip> address of interface on which to receive mulitcast messages (can be other then route table).
+         --mc-tx-if           	-<ip> address of interface on which to transmit mulitcast messages (can be other then route table).
+         --mc-loopback-enable 	-Enables mc loopback (default disabled).
+         --mc-ttl             	-Limit the lifetime of the message (default 2).
+         --buffer-size        	-Set total socket receive/send buffer <size> in bytes (system defined by default).
+         --vmazcopyread       	-If possible use VMA's zero copy reads API (See VMA's readme).
+         --daemonize          	-Run as daemon.
+         --nonblocked         	-Open non-blocked sockets.
+         --recv_looping_num   	-Set sockperf to loop over recvfrom() until EAGAIN or <N> good received packets, -1 for infinite, must be used with --nonblocked (default 1). 
+         --dontwarmup         	-Don't send warm up messages on start.
+         --pre-warmup-wait    	-Time to wait before sending warm up messages (seconds).
+         --no-rdtsc           	-Don't use register when taking time; instead use monotonic clock.
+         --set-sock-accl      	-Set socket accleration before run (available for some of Mellanox systems)
+         --load-vma           	-Load VMA dynamically even when LD_PRELOAD was not used.
+ -d      --debug              	-Print extra debug information.
+
+Valid arguments:
+         --threads-num        	-Run <N> threads on server side (requires '-f' option).
+         --cpu-affinity       	-Set threads affinity to the given core ids in list format (see: cat /proc/cpuinfo).
+         --vmarxfiltercb      	-If possible use VMA's receive path message filter callback API (See VMA's readme).
+         --force-unicast-reply	-Force server to reply via unicast.
+         --dont-reply         	-Server won't reply to the client messages.
+ -m      --msg-size           	-Set maximum message size that the server can receive <size> bytes (default 65506).
+ -g      --gap-detection      	-Enable gap-detection.
+

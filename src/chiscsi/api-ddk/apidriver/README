@@ -1,0 +1,104 @@
+The api-ddk is a sample development code which shows how Chelsio's 
+iSCSI target API can be used by a storage driver.
+
+Please be advised that this example implements most but not all of the features 
+provided by Chelsio iSCSI Target API. Please refer the API programming guide for 
+complete reference.
+
+-------------------------------------------------------------------------
+Sample interface driver compilation and usage
+-------------------------------------------------------------------------
+To compile do: 
+
+. ./configure (Please note extra . for sourcing the script)
+make 
+
+This creates a module named ifacedriver.ko.
+
+Please look at iface_init.c for the sample target configration parameter list.
+
+-------------------------------------------------------------------------
+Interface driver details
+-------------------------------------------------------------------------
+The sample storage driver software implemnets few SCSI commands and upto 4 
+luns are configurable.
+
+NOTE: Please note for sake of simplicity currently there is only one target
+available and its name is configurable as shown above. Similarly for features
+such as chap, access control etc. global variable init_name is provided which
+is also configurable.
+
+PLEASE NOTE READ AND WRITE DATA IS IGNORED IN THIS development example 
+even though memory is allocated.
+
+-iface_init.c - initialize interface driver
+	This file contains functions which perform following actions
+	-Register/Deregister iSCSI Target class
+	-Register/Deregister iSCSI Target Lun class
+	-Initialize the LUNs
+	-Add/remove iSCSI target 
+	-Add iSCSI target parameters 
+	-initiate and run the storage thread
+
+-iface_target_class.c - chiscsi_target_class initialization and implementation
+	This file contains functions which perform following actions
+	-implements and sets all the function pointers required by target_class
+	-sets up CHAP authentication info
+		For oneway chap set
+			CHAP_FLAG_REMOTE_SECRET_VALID flag
+			chap->remote_secret
+			chap->remote_secret_length
+		For Mutual chap set
+			chap->local_name
+			chap->local_secret
+			chap->local_secret_length
+			CHAP_FLAG_LOCAL_SECRET_VALID flag
+			CHAP_FLAG_LOCAL_NAME_VALID flag
+		Additionally to force mutual chap set
+			CHAP_FLAG_MUTUAL_REQUIRED flag
+
+-iface_lun_class.c - chiscsi_target_lun_class initialization and implementation
+	This file contains functions which Performs following actions:
+	-setup the chiscsi_target_lun_class struct with appropriate functions 
+	 and property bits, Must set LUN_CLASS_SCSI_PASS_THRU_BIT.
+	 set LUN_CLASS_MULTI_PHASE_DATA_BIT for multiphase buffer allocation
+	 set LUN_CLASS_HAS_CMD_QUEUE_BIT for queud up scsi commands executed by storage thread
+	 In current sample code all flags have to be set
+
+	-Allocate memory and setup iscsi_sgvec list. 
+	 Make sure to populate fields below
+              sgvec->sg_page
+              sgvec->sg_addr
+              sgvec->sg_offset
+              sgvec->sg_length
+	      if setting physical address then also set sgvec->sg_dma_addr
+	- The data structure scmd_sgl holds the information about the sglist.
+
+	- If LUN_CLASS_HAS_CMD_QUEUE_BIT is set, then storage driver should 
+	  maintain its own queue of scsi commands and execute the commands 
+	  using another thread so that iscsi target thread is freed up to do its work. 
+	  chiscsi_target_lun_class provides .fp_queued_scsi_cmd_exe for executing this 
+	  work. They have to be used together.
+	
+-storage_driver.c - Software implementaion of the storage driver.
+	This file contains functions which Perform following actions
+	-implements following SCSI commands
+		LUN INQUIRY
+		REPORT LUNS
+		TEST UNIT READY
+		READ_CAPACITY
+		MODE SENSE
+		SERVICE_ACTION_IN_16
+	-In case of error sense data is set in iscsi_scsi_command fields. 
+	 the relevent fields to be populated are 
+		sc_status
+		sc_response
+		sc_semse_key
+		sc_sense_asc
+		sc_sense_ascq
+		sc_sense_buf
+		sc_xfer_residualcount
+	
+- storage_kthread.c - Thread creation, initialization and execution
+	A thread is created per lun and executes the queued scsi commands. 
+

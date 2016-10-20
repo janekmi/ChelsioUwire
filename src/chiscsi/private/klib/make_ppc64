@@ -1,0 +1,14 @@
+#####################################################################
+# Assumptions are basically that all the .c files in the CWD are modules
+# for the library and that all .h files are the interface to the library.
+#####################################################################
+# ppc64 specific flags
+EXTRA_FLAGS += -msoft-float -pipe
+EXTRA_FLAGS += -Iarch/powerpc
+EXTRA_FLAGS += -mpowerpc -mcpu=power4 
+# need to clean this up
+EXTRA_FLAGS += -fno-delete-null-pointer-checks -mminimal-toc -mcall-aixdesc -mcpu=power4 -mno-altivec -mno-spe -mspe=no -funit-at-a-time -mno-string -Wa,-maltivec -Wframe-larger-than=2048 -fno-stack-protector -Wno-unused-but-set-variable -fomit-frame-pointer -g -Wdeclaration-after-statement -Wno-pointer-sign -fno-strict-overflow -fno-dwarf2-cfi-asm
+
+PLATNAME = ppc64
+
+include ./make_common

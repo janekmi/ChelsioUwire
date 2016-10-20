@@ -1,0 +1,57 @@
+################################################################################
+# Makefile for Chelsio Partial Offload FCoE linux drivers.                     #
+#                                                                              #
+# Copyright (C) 2015 Chelsio Communications.                                   #
+#                                                                              #
+################################################################################
+
+CC:=gcc
+
+FILES=../common/chfcoe_rnode.c
+FILES+=../common/chfcoe_lnode.c
+FILES+=../common/chfcoe_fcf.c
+FILES+=../common/chfcoe_fip.c
+FILES+=../common/chfcoe_port.c
+FILES+=../common/chfcoe_init.c
+FILES+=../common/chfcoe_vn2vn.c
+FILES+=../common/chfcoe_worker.c
+FILES+=../common/chfcoe_xchg.c
+FILES+=../common/chfcoe_ioctl.c
+FILES+=../common/chfcoe_ddp.c
+FILES+=../target/chfcoe_tgt.c
+FILES+=../common/chfcoe_cpl_io.c
+FILES+=../common/chfcoe_proto.c
+
+CFLAGS+= -I./
+CFLAGS+= -I../linux/services/
+CFLAGS+= -I../target/
+CFLAGS+= -I../common/
+CFLAGS+= -I$(CXGB4_SRC_PATH)
+CFLAGS+= -I$(CSIOSTOR_SRC_PATH)
+CFLAGS+= -I$(CSIOSTOR_SRC_PATH)/fcoe
+CFLAGS+= -I$(FIRMWARE_PATH)
+CFLAGS+= -D__CHFCOE_PRIVATE__
+#CFLAGS+= -g -D__CHFCOE_DEBUG__  -D__CHFCOE_DEBUGFS__
+CFLAGS+= -D__CSIO_TARGET__
+CFLAGS+= -m64 -mcmodel=kernel -mno-red-zone		\
+	 -mtune=generic					\
+	 -maccumulate-outgoing-args
+CFLAGS+= -fno-common -fno-omit-frame-pointer		\
+	 -fno-strict-aliasing -ffreestanding		\
+	 -fstack-protector 				\
+	 -fno-delete-null-pointer-checks		\
+	 -fconserve-stack -fno-strict-overflow		\
+	 -fno-optimize-sibling-calls			\
+	 -fno-asynchronous-unwind-tables		\
+	 -funit-at-a-time
+CFLAGS+= -Wall -Wextra -Wstrict-prototypes		\
+	 -Wdeclaration-after-statement -Wundef		\
+	 -Werror-implicit-function-declaration		\
+	 -Wframe-larger-than=2048
+CFLAGS+= -pipe -combine	-O2 -nostdinc	
+CFLAGS+= -c -o libchfcoe_x86_64.o_shipped
+
+build:
+	$(CC) $(FILES) $(CFLAGS)
+clean:
+	rm -f libchfcoe_x86_64.o_shipped

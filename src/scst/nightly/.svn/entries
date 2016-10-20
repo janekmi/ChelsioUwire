@@ -1,0 +1,46 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/nightly
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2014-01-16T16:11:23.375204Z
+5197
+bvassche
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+conf
+dir
+
+bin
+dir
+
+README.txt
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+c30a8f38e0a52777fe2ef68474cd3ca5
+2009-04-07T17:28:14.812978Z
+755
+bvassche
+

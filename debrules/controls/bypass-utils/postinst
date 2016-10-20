@@ -1,0 +1,9 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+ln -f /sbin/ba_client /sbin/redirect
+ln -f /sbin/ba_client /sbin/bypass
+
+exit 0

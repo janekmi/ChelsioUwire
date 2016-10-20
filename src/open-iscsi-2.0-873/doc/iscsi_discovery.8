@@ -1,0 +1,52 @@
+.de Vb \" Begin verbatim text
+.ft CW
+.nf
+.ne \\$1
+..
+
+.TH "iscsi_discovery" 8
+.SH NAME
+iscsi_discovery \- discover iSCSI targets
+.SH SYNOPSIS
+.B iscsi_discovery <IP> [-p <port>] [-d] [-t <tcp|iser> [-f]] [-m] [-l]
+
+.SH DESCRIPTION
+Perform send-targets discovery to the specified IP. If a discovery record
+is generated, try to login to the portal using the preferred transport
+(\-t flag specifies the requested transport type, TCP is the default).
+If login using a certain transport succeeds, mark the portal for automatic
+login (unless \-m flag is used), and disconnect (unless \-l flag is used).
+
+For iSCSI discovery to work, open-iscsi services must be running. i.e. iscsid
+should be up, and the iSCSI modules loaded. This is best accomplished by the
+init.d startup script.
+
+.\" .SH OPTIONS
+.TP
+.BI [-p=]\fIport\-number\fP
+set the port number (defualt is 3260).
+.TP
+.BI [-d]
+print debugging information.
+.TP
+.BI [-t=]\fItransport\-type\fP
+set transport (default is tcp).
+.TP
+.BI [-f]
+force specific transport -
+disable the fallback to tcp (default is fallback enabled).
+force the transport specified by the argument of the \-t flag.
+
+.TP
+.BI [-m]
+manual startup - will set manual startup (default is automatic startup).
+.TP
+.BI [-l]
+login - login to the new discovered nodes (defualt is false).
+
+.SH AUTHOR
+Written by Dan Bar Dov
+.SH "REPORTING BUGS"
+Report bugs to <erezzi.list@gmail.com>.
+.SH COPYRIGHT
+Copyright \(co Voltaire Ltd. 2006.

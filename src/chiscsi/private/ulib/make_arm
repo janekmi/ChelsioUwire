@@ -1,0 +1,47 @@
+#####################################################################
+# Assumptions are basically that all the .c files in the CWD are modules
+# for the library and that all .h files are the interface to the library.
+#####################################################################
+LIBDIR = ../../lib/ulib
+
+include ../Rules.make
+include ../../../make/setting_arm_usr.make
+
+#####################################################################
+LINCS	= -I. -I../../includes -I../include
+
+EXTRA_FLAGS += -pipe -Wno-sign-compare
+# xscale
+EXTRA_FLAGS += -Wa,-mcpu=xscale -Uarm
+
+CFLAGS	+= $(COMMON_CFLAGS) $(COMMON_DEFS) $(LINCS)
+CFLAGS  += -O2 -fno-inline -Wall -Wstrict-prototypes 
+CFLAGS	+= $(EXTRA_FLAGS)
+
+# library name
+$(warning FPU = $(FPU))
+ifeq ($(FPU),1)
+        LIBNAME = libchctl.arm.hfp.a
+	CFLAGS += -mhard-float
+else
+        LIBNAME = libchctl.arm.sfp.a
+	CFLAGS += -msoft-float
+endif
+
+# object files
+LIBOBJ	=  $(patsubst %.c,%.o,$(wildcard *.c ))
+
+all: $(LIBNAME) postmake
+
+$(LIBNAME): $(LIBOBJ)
+#	strip $(ULIB_KEEP_SYMBOLS) $^
+	$(AR) rcs $@ $^
+
+postmake:
+	@echo "copy $(LIBNAME) to $(LIBDIR)"
+	@mkdir -p ../../lib/ulib
+	@cp -f $(LIBNAME) $(LIBDIR)
+
+clean:
+	$(RM) $(LIBNAME) *.o
+	$(RM) $(LIBDIR)/$(LIBNAME)

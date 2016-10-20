@@ -1,0 +1,240 @@
+#! /bin/bash
+
+VERSION=1.0
+
+PWD=$(pwd)
+kver=$(uname -r)
+distro=$(cat /etc/*-release)
+arch=$(uname -p)
+
+args=("$@") 
+cmd_args=${#args[@]} 
+arg_stat=0
+myname=$(basename $0)
+
+if [[ $cmd_args -ne 0 ]] ; then
+	for (( i=0;i<$cmd_args;i++)); do 
+		if [[ ${args[${i}]} == "-h" ]] || [[ ${args[${i}]} == "--help" ]]; then
+			echo -e "\n${myname} v${VERSION}\n------------------\n"
+			echo "Execute this script with root privilages to collect chelsio debug logs"
+			echo -e "./$myname"
+			echo -e "\n-h,--help\t - Print help"
+			echo -e "\nThe ${myname} script will collect Chelsio debug information and creates a archive.\n"
+			exit 0
+		else
+			echo "Invalid argument specified, Please use --help for more information."
+			exit 1
+		fi
+	done
+fi
+
+if [[ $EUID -ne 0 ]] ; then
+	echo "Please execute this script with root privilages, use --help for more information."
+	exit 1
+fi
+
+logdir=${PWD}/chelsio_debug_logs
+logfile=${logdir}/chelsio_debug.log
+cudbgdir=${logdir}/cudbg
+cudbglog=${cudbgdir}/cudbg
+varlogdir=${logdir}/var_log_msgs
+if [ -d $logdir ] ; then
+	mv $logdir ${logdir}_old
+fi
+mkdir -p $logdir $varlogdir $cudbgdir
+
+function header
+{
+	clear
+	echo "************************************"
+	echo "    Chelsio Debug Collector v${VERSION}"
+	echo "************************************"
+}
+
+fbusid=""
+declare -a fbuspath
+bus_ids=$(lspci -D | grep -i -e '00\.4.*Chelsio'| awk '{print $1}')
+bus_len=$(lspci -D | grep -c -i -e '00\.4.*Chelsio'| awk '{print $1}')
+adaptype=$(lspci | grep -i -e '00\.4.*Chelsio'| awk '{print $7}')
+
+function getbusid
+{
+	declare -a bus_list
+	declare -a adap_list
+	bcid=0
+	adid=0
+	if [[ $bus_len -gt 1 ]] ; then
+		header
+		for buss in $bus_ids ; do bcid=` expr $bcid + 1 ` ; bus_list[bcid]=$buss ; done
+		for adapss in $adaptype ; do adid=` expr $adid + 1 ` ; adap_list[adid]=$adapss ; done
+		echo "$bus_len Chelsio adapters are present in the machine"
+		echo -e "Please select a specific adapter from list below:\n"
+		bcid=0
+		for i in ${bus_list[*]}; do
+			bcid=`expr $bcid + 1 `
+			echo "$bcid - ${bus_list[$bcid]} - ${adap_list[$bcid]}"
+		done
+		echo "a - Collect logs for all the above adapters"
+		echo "x - Exit"
+		while [[ 1 ]] ; do
+			echo 
+			read -p "Please enter a value: " bus
+			case $bus in
+				a) fbusid=${bus_list[*]}
+				   break
+				;;
+				x) exit 0 
+				;;
+				[1-9]) fbusid=${bus_list[$bus]}
+				       break
+				;;
+				*) echo "Please Enter a valid option."
+			esac 
+		done
+	else
+		fbusid=$bus_ids
+	fi
+	
+}
+getbusid
+
+function getfullbuspath
+{
+	for fbuss in $fbusid ; do
+		fbid=`expr $fbid + 1 `
+		fbuspath[fbid]=/sys/bus/pci/devices/${fbuss}
+	done
+}
+getfullbuspath
+
+function writelog
+{
+	echo $1 >> $logfile
+}
+
+function printhead
+{
+	writelog ""
+	writelog "#######################################" 
+	writelog "####$1"
+	writelog "#######################################"
+}
+
+function printhead2
+{
+	writelog "###############$1###############"
+}
+
+function cmdlog
+{
+	writelog ""
+	cmd=$1
+	printhead2 "$cmd"
+	if [[ $2 -eq 1 ]] ; then
+		$cmd | tee -a $logfile
+	else
+		$cmd >> $logfile
+	fi
+	sync
+}
+
+function create_tar_package
+{
+	which tar > /dev/null 2>&1
+	if [[ $? -eq 0 ]] ; then 
+		echo -n "Creating tar package : "
+		tar mcjf ${logdir}$1.tar.bz2 ${logdir} >/dev/null 2>&1 
+		if [[ $? -eq 0 ]] ; then 
+		echo "Done" ; echo -e "\nThe $(if [[ $1 ]] ; then echo "CUDBG Adapter"; else echo "OS" ; fi ) logs are archived at following location ${logdir}$1.tar.bz2"
+		else echo "Failed" ; fi
+	fi
+}
+
+echo "Collecting OS debug logs at $logfile"
+echo "This may take sometime, Please Wait.."
+echo > $logfile
+
+if [[ $bus_len -eq 0 ]] ; then
+	writelog "No chelsio Adapters found"
+	adaptype=""
+fi
+
+ethinterfaces=$(ifconfig -a | awk '/^[a-z]/ { print $1 } ' | awk -F ":" '{print $1}')
+
+chcount=0
+declare -a chintf #Array to store all chelsio interfaces
+for chbusinf in ${fbusid[*]} ; do
+	for intf in $ethinterfaces ; do
+		if [[ $intf == "lo" ]] ; then
+			continue
+		fi
+		chhwid=$(ethtool -i $intf | grep -c -E $chbusinf 2>/dev/null)
+		if [ $chhwid -gt 0 ] ; then
+			chcount=` expr $chcount + 1 `
+			chint[chcount]=$intf
+		fi
+	done
+done
+
+cmdlog "date"
+
+printhead "SYSTEM_INFO"
+
+writelog ""
+writelog "Kernel : $kver"
+writelog "Distro : $distro"
+writelog "Architecture : $arch"
+writelog "Chelsio Adapters : $adaptype"
+writelog "Chelsio Interfaces : ${chint[*]}"
+
+cmdlog "cat /proc/cpuinfo"
+cmdlog "cat /proc/meminfo"
+
+printhead "NETWORK_INFO"
+cmdlog "netstat -rn"
+cmdlog "netstat -s"
+cmdlog "netstat -l"
+cmdlog "arp -an"
+
+writelog ${chint[*]}
+for eths in ${chint[*]} ; do
+	cmdlog "ethtool -S $eths"
+	cmdlog "ethtool -i $eths"
+done
+cmdlog "ifconfig -a"
+
+printhead "DRIVER_INFO"
+cmdlog "dmidecode"
+cmdlog "dmesg"
+cmdlog "lspci -vvv"
+cmdlog "lspci -tv"
+cmdlog "lsmod"
+
+if [[ -f /lib/firmware/cxgb4/t5-config.txt ]] ; then
+	cmdlog "cat /lib/firmware/cxgb4/t5-config.txt"
+fi 
+
+cp -f $(ls /var/log/messages* -t | head -10) $varlogdir
+
+create_tar_package
+
+CUDBG_BIN=$(which cudbg_app 2>/dev/null)
+if [[ $? -ne 0 ]] ; then 
+	CUDBG_BIN=${PWD}/bin/cudbg_app
+	if [[ ! -f $CUDBG_BIN ]] ; then
+		echo -e "\nChelsio \"cudbg_app\" utility is needed to collect adapter debug logs."
+		echo 	"The cudbg_app utility can be installed using Chelsio Unified wire source package."
+		exit 3
+	fi
+fi
+
+echo -e "\nCollecting Adapter logs for bus id's ${fbusid[*]} using CUDBG... \n"
+for eths in ${fbuspath[*]} ; do
+	busp=$(basename $eths)
+	cmdlog "$CUDBG_BIN --collect all $eths ${cudbglog}_${busp}.log --skip mc0,mc1 2>&1" 1
+	echo -e "\nCollecting mc0 log for Bus id : $eths \nThis may take several minutes to complete\n"
+	cmdlog "$CUDBG_BIN --collect mc0 $eths ${cudbglog}_${busp}_mc0.log 2>&1 " 1
+	echo -e "\nCollecting mc1 log for Bus id : $eths \nThis may take several minutes to complete\n"
+	cmdlog "$CUDBG_BIN --collect mc1 $eths ${cudbglog}_${busp}_mc1.log 2>&1 " 1
+done
+create_tar_package "_with_cudbg" 

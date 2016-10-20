@@ -1,0 +1,148 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2014-01-22T03:03:04.557943Z
+5222
+vlnb
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+iscsi-scst
+dir
+
+www
+dir
+
+SVN_TAGS
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+1b43073bf490df5bd99a91b0d0fd58a4
+2013-01-31T14:04:42.242434Z
+4749
+bvassche
+
+scstadmin
+dir
+
+scst_local
+dir
+
+scripts
+dir
+
+AskingQuestions
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+a16ad102f7a8ddd4a33652273f1123a5
+2011-04-19T22:56:07.282107Z
+3395
+vlnb
+
+qla_isp
+dir
+
+srpt
+dir
+
+README
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+b5fb9ae2cf895b323c737a407a2cecbf
+2008-06-26T16:35:10.389883Z
+422
+vlnb
+
+ibmvstgt
+dir
+
+fcst
+dir
+
+mpt
+dir
+
+qla_isp-release.patch
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+ebaee15f1a81e407f9cb8d2f3d277ccf
+2009-03-06T19:06:32.982877Z
+693
+vlnb
+
+doc
+dir
+
+mvsas_tgt
+dir
+
+usr
+dir
+
+scst.spec.in
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+3454c5d2d4dcdd3f5eda5a7d808ebe98
+2013-12-03T12:04:35.888161Z
+5137
+bvassche
+
+qla2x00t
+dir
+
+scst
+dir
+
+Makefile
+file
+
+
+
+
+2014-04-10T13:32:43.000000Z
+5cda9159b141188d989dca1e7a7cc738
+2013-12-03T12:04:35.888161Z
+5137
+bvassche
+
+nightly
+dir
+

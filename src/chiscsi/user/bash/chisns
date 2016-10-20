@@ -1,0 +1,42 @@
+#set -x
+_sns_complete() 
+{
+    local cur prev opts entity 
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    if [[ "$cur" =~ "=" ]]; then
+        temp=$cur
+        prev=$( echo $temp | cut -d"=" -f 1)"="
+        cur=$( echo $temp | cut -d"=" -f 2)
+    fi
+
+    opts="-i -t server= id= query="
+
+	case "${prev}" in
+                id=)
+	                opts=$( hostname )
+        	        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+	                return 0
+        	        ;;
+		-i|-t)
+			opts="server= "
+			COMPREPLY=( $(compgen -o nospace -W "${opts}" -- ${cur}) )
+			return 0
+			;;
+	esac
+
+	if [[ "$prev" =~ "chisns" ]]; then
+	        COMPREPLY=( $(compgen -W "${opts}" -S ' ' -- ${cur}) )
+	fi
+
+    if [[ "$prev" =~ "server=" ]] && [[ "$prev" != "server=" ]]; then
+        opts="id= query="
+        COMPREPLY=( $(compgen -o nospace -W "${opts}" -- ${cur}) )
+    fi
+
+
+}
+complete -F _sns_complete -o nospace chisns
+

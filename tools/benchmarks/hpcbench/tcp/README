@@ -1,0 +1,79 @@
+tcpserver/tcptest -- A TCP communication benchmark
+
+The TCP RTT (latency) test is just a TCP version of "ping". RTT is too short to be 
+measured in HPC environments, so we repeat RTT test many times and get the average of RTTs.
+
+In the TCP tests, message size (-m option) specifies the amount of data to be sent each time. 
+The iteration of sending/receiving for a test time (-t option) is determined by an evaluation 
+test, so the actually test time could vary slightly. In exponential test, message size 
+increases expontenally from 1 byte to a large number (-e option). Be aware that there is a 
+minimum number of iteration, and the test time might be much greater than what you specify if 
+the message size is very large.
+
+If CPU and system monitoring option (-c) is defined, both client and server's CPU usages 
+(Maximum 8 CPUs supported for SMP systems), network interface statistics and its interrupts 
+to each CPU will be recorded. Currently this option is only available for Linux system.
+
+tcpserver usage: tcpserver [options]
+ % tcpserver [-v] [-p port]
+ [-p port-number] Port number for TCP communication (0 picked by system). 5677 by default.
+ [-v] Verbose mode. Disable by default.
+
+tcptest usage: tcptest -h host [options]
+ % tcptest -h host [-vanicCNP] [-p port] [-A rtt-size] [-e exponent] [-b buffer] [-B buffer] [-q qos]
+           [-M MSS] [-d data] [-m message] [-r repeat] [-t time] [-f sendfile] [-I iteration] [-o output]
+ [-a] Test the TCP Round Trip Time (RTT). Ignore all other options if defined.
+ [-A test-size] TCP RTT test with specified message size.
+ [-b buffer-size] TCP buffer (windows) size in bytes. System default if not defined.
+ [-B buffer] Server UDP buffer size in bytes. The same as cleint's by default.
+ [-c] CPU log option. Tracing system information during the test. Only availabe when output is defined.
+ [-C] Turn on socket's TCP_CORK option (avoid sending partial frames). Disable by default.
+ [-d data-size] Data size of each read/write in bytes. The same as packet size by default.
+ [-e n] Exponential tests with message size increasing exponentially from 1 to 2^n.
+ [-f sendfile] Sendfile test. Memory mapping is used to reduce the workload. Disable by default.
+ [-h host-name] Hostname or IP address of server. Must be specified.
+ [-i] Bidirectional UDP throuhgput test. Default is unidirection stream test.
+ [-I iteration] Iteration of sending/receiving for each test. Auto-determined by default.
+ [-m message-size] Message size in bytes. 65536 by default.
+ [-M MSS-size] Maximum Segent Size in bytes (MTU-40 for TCP). System default if not defined.
+ [-n] Non-blocking communication. Blocking communication by default.
+ [-N] Turn on socket's TCP_NODELAY option (disable Nagel algorithm). Disable by default.
+ [-o output] Output file name.
+ [-p port-number] Server's port number. 5677 by default.
+ [-P] Write the plot file for gnuplot. Only enable when the output is specified.
+ [-q qos] Define the TOS field of IP packets. Six value can be used for this setting:
+     1:(IPTOS)-Minimize delay 2:(IPTOS)-Maximize throughput 
+     3:(DiffServ)-Class1 with low drop probability 4:(DiffServ)-class1 with high drop probability
+     5:(DiffServ)-Class4 with low drop probabiltiy 6:(DiffServ)-Class4 with high drop probabiltiy
+ [-r repeat] Repetition of tests. 10 by default.
+ [-t test-time] Test time in seconds. Disable if iteration is sepcified. 5 by default.
+ [-v] Verbose mode. Disable by default.
+ Note: Input supports the postfix of "kKmM". 1k=1024, 1M=1024x1024.
+
+Examples
+
+ 1. Start server process
+ [server] % tcpserver
+
+ 2. Start client process
+ [client] % tcptest -h server
+ TCP blocking stream test with default set of parameters, verbose off, no result writing.
+ Default buffer size, message-size: 65536, test-time: 5.00, test-repeat: 10
+
+ [server] % tcpserver -p 3000
+ [client] % tcptest -vn -h server -p 3000 -b 100k -m 10m -t 2 -r 20 -o output.txt
+ Repeat non-blocking stream tests by 20 times with communication port of 3000.
+ Buffer size: 100K, message size: 10M, test time: 2 Seconds, store results in "output.txt".
+
+ [client] % tcptest -e 20 -vh server -b 100k -o output.txt
+ Exponential stream test for buffer size of 100 KB with verbose mode with message size 
+ increasing exponentially from 1 Byte to 1 MByte (2^20).
+
+ [client] % tcptest -ah server
+ TCP Round Trip Time (RTT) test. A TCP version of ping.
+
+ With plot option (-P), when an "output" file is specified, an "output.plot" file will also be 
+ created for plotting. Use "gnuplot ouput.plot" to plot the data.
+ With CPU option (-c), when an  "output" file is specified, "output.c_log" and  "output.s_log"
+ files store the system information of client and server, respectively.
+

@@ -1,0 +1,44 @@
+#!/bin/bash
+echo "Chelsio wdreload Rev 1.0"
+
+if [ `whoami` != root ]; then
+	echo "**FATAL** User must be root"
+	exit 1
+fi
+
+
+kv1=`uname -r | cut -d. -f1`
+kv2=`uname -r | cut -d. -f2`
+kv3=`uname -r | cut -d. -f3`
+kv3=`echo $kv3 | cut -d- -f1`
+kv3=`echo $kv3 | cut -d_ -f3`
+
+#unload
+if [ "$kv1" == "2" -a "$kv2" == "6" -a $kv3 -lt 29 ]; then
+        modprobe -r mlx4_ib
+        mlx4_ib=`lsmod | grep -c ^mlx4_ib`
+
+        if [ "$mlx4_ib" -ne 0 ]; then
+                echo "**FATAL** Modules mlx4_ib loaded"
+                exit 1
+        fi
+fi
+
+if [ -e /sys/kernel/debug/cxgb4/*/tids ]; then
+	val4=`cat /sys/kernel/debug/cxgb4/*/tids | grep in | grep -c 0$`
+	if [ $val4 == 4 ]; then 
+		modprobe -r t4_tom
+	fi
+fi
+modprobe -r rdma_ucm
+modprobe -r iw_cxgb4
+modprobe -r cxgb4
+cxgb4=`lsmod | grep -c ^cxgb4`
+iw_cxgb4=`lsmod | grep -c ^iw_cxgb4`
+rdma_ucm=`lsmod | grep -c ^rdma_ucm`
+t4_tom=`lsmod | grep -c ^t4_tom`
+
+if [ "$cxgb4" -ne 0 ] || [ "$iw_cxgb4" -ne 0 ] || [ "$rdma_ucm" -ne 0 ] || [ "$t4_tom" -ne 0 ]; then
+        echo "**FATAL** Modules cxgb4, iw_cxgb4, rdma_ucm or t4_tom loaded"
+        exit 1
+fi

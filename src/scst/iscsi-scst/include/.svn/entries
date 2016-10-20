@@ -1,0 +1,52 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/iscsi-scst/include
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-02-20T02:05:29.242343Z
+4767
+vlnb
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+iscsi_scst_ver.h
+file
+
+
+
+
+2014-04-10T13:32:30.000000Z
+3709b97c2cde66535fecc629804888ce
+2013-02-20T02:05:29.242343Z
+4767
+vlnb
+
+iscsi_scst.h
+file
+
+
+
+
+2014-04-10T13:32:30.000000Z
+3fed7838b2a0aefd37a82238a4383ea5
+2013-02-20T02:05:29.242343Z
+4767
+vlnb
+

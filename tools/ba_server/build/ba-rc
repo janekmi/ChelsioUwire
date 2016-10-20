@@ -1,0 +1,59 @@
+#!/bin/bash
+#
+# chkconfig: 2345 20 80
+# description: Starts and stops ba_server ( Chelsio bypass adapter service )
+
+
+# Source function library.
+. /etc/init.d/functions
+
+BA_SERVER=ba_server
+BA_SERVER_ARGS=$2
+BA_CFG_FILE=/etc/ba.cfg
+BA_LOG_FILE=/var/log/ba.log
+
+function start() {
+
+	echo -n "Starting $BA_SERVER: "
+	$BA_SERVER $BA_SERVER_ARGS &> $BA_LOG_FILE
+	if test $? = 0; then
+                echo "[  OK  ]"
+        else
+                echo "[  Failed  ]" 
+                exit 1
+        fi
+
+	if [ -f $BA_CFG_FILE ] ; then
+		bash $BA_CFG_FILE
+	fi
+}
+
+function stop() {
+	echo -n "Stopping $BA_SERVER: "
+	killall $BA_SERVER &> $BA_LOG_FILE && echo "[  OK  ]" || echo "[  Failed  ]"
+}
+
+case "$1" in                 
+        start)                              
+                start           
+                ;;                                        
+            
+        stop)                                  
+                stop                                        
+                ;;                                                            
+
+        restart)                                                      
+                stop                   
+                sleep 1                                                       
+                start                                       
+                ;;                                       
+
+        status)                                  
+		status $BA_SERVER
+		;;
+          
+        *)                                   
+                echo $"Usage: $0 {start|stop|restart} ARG"   
+                exit 1
+esac             
+

@@ -1,0 +1,152 @@
+open-iscsi-2.0-872 - open-iscsi-2.0.873
+
+Ales Kozumplik (1):
+      fwparam_sysfs: fix pathname manipulation error in fwparam_sysfs_boot_info.
+
+Eddie Wai (3):
+      ISCSID: Fixed a race condition in the INVALID_HOST path
+      ISCSID: Fixed iface update for the new iface net config params
+      ISCSIADM: Included the new iface net params to the node creation
+
+Hannes Reinecke (6):
+      iscsid sends SIGTERM to PID 0
+      iscsid: Implement --no-pid-file
+      Keep startup mode in sync when specified in config file
+      Allow LOCK_DIR to be set via CFLAGS
+      Allow 'onboot' as loginall parameter
+      boot.suse: Update with latest fixes
+
+Jim Ramsay (12):
+      Add specific session information to session_rec_t
+      Add support for multiple sessions per iface to iscsid
+      Add multiple sessions per iface commandline syntax
+      Add new node.session.nr_sessions config parameter
+      Implement leading-login support
+      Fix dcb_app.c compile error with old kernels
+      Check all ifaces during discovery even if some timeout
+      iscsid: In foreground mode, treat SIGINT like SIGTERM
+      Revise bind_conn_to_iface logic
+      iscsi tools: Fix warnings reported by gcc-4.5.2
+      fwparam_ibft: Fix warnings reported by gcc-4.5.2
+      open-isns: Fix warnings reported by gcc-4.5.2
+
+Karen Xie (1):
+      open-iscsi: add transport cxgb4i
+
+Lalit Chandivade (2):
+      iscsiadm: add netconfig support
+      iscsi tools: manage qla4xxx iscsi sessions with iscsiadm
+
+Manish Rangankar (1):
+      iscsid: Fixed iscsid restart issue for offload iSCSI login
+
+Mark Rustad (7):
+      Add some consts to char * parameters that are not changed
+      Add dcb_app.h for DCB support
+      Add dcb_app.c for DCB support
+      Add initial DCB support
+      iscsid: Fix netdev check
+      Remove redundant initialization
+      iscsid: Add IEEE DCB support
+
+Mike Christie (86):
+      iscsid: remove bogus debug log msg in isns_disc_new_portals
+      isns: Fix endless loop when pollhup is returned
+      iscsi tools: fix multi pdu sendtargets discovery sequences
+      iscsi boot: fix iscsi_boot sysfs parsing
+      Use pass through interface for sendtargets (take4) Currenly offload cards like bnx2i, be2iscsi, cxgb3i must use a normal eth for discovery. This patch allows us to do discovery using the iscsi class passthrough interface.
+      Add userspace/tools iscsi error code defs
+      iscsi tools: fix iscsiadm exit codes
+      iscsid: modify data drop
+      iscsi doc: document iscsiadm host argument
+      iscsid: add new auth error code
+      iscsi tools: convert discovery code to iscsi error codes
+      iscsi tools: document iface rp_filter use
+      iscsi tools: disable isns dsa code
+      iscsi tools: support hostnames in node mode
+      iscsi tools: fix discovery return code
+      iscsiadm: fix offload discovery retry
+      iscsid: fix signal handler debug msg
+      iscsiadm: fix discovery exit code
+      iscsi tools: fix dcbnl.h compile error
+      iscsid: retry initial connect
+      iscsi tools/kernel: switch make defaults
+      iscsi tools: fix comment about sysfs lookup failures
+      iscsi tools: fix netlink bug allocation
+      iscsi tools: Don't try to bind offload EPs to sockets
+      iscsi tools: fix oom_adj use
+      iscsi tools: fix bnx2i boot due to MAC mismatch
+      iscsiadm: fix discoverydb help
+      Update SUSE init script
+      iscsi tools: revert commit c440cbe7ba2464f8baadedb55b00754c36773c2c
+      Add a TODO
+      TODO: mark down Jose as working on idr
+      Update TODO
+      iscsi tools: fix iname sysfs handling
+      iscsi tools: handle compile warnings about unused variables
+      iscsiadm: print kernel iface info
+      iscsi tools: add tgt reset to session info and fix unknown values
+      iscsi tools: fix default iface binding setup
+      iscsi tools: fix iscsiadm return value on failed login
+      iscsi tools: don't build with openssl
+      iscsi tools: check NULL pointer first and add limit check in str_remove_initial
+      iscsi tools: fix README sid lookup info
+      iscsid: print out more informative error string for kernel errors
+      iscsi tools: fix netlink msg setup
+      iscsi tools: fix up vlan support
+      update todo
+      iscsiadm: fix printing of unknown host values
+      Do not run configure for open-isns on every build
+      iscsi tools: fix ipv6 ibft/firmware boot
+      iscsid: don't sync qla4xxx flash sessions
+      iscsid: kill session if already exists.
+      isns: remove rfc files.
+      iscsistart: allow any rec/iscsid.conf setting as arg
+      iscsistart: support params in offload/ibft mode
+      iscsi tools: never use hdr digest with iser
+      iscsi tools: update iscsi_if.h for host event
+      iscsi tools: added ping support
+      iscsi tools: Add support to display a host's CHAP list and delete
+      iscsi tools: fix conn state compilation warnings
+      iscsi tools: allow default to have different transort names
+      iscsiadm: print ping status string
+      iscsi tools: fix hostname with port handling
+      iscsi tools: have iscsid/iscsiadm load modules as needed
+      iscsi tools: have iscsiadm load offload modules
+      init: update red hat init script for module changes
+      iscsi tools: create def ifaces on demand
+      iscsi tools: iscsiadm modprobe support
+      iscsi tools: remove class version check
+      iscsi tools: remove unused len variable
+      iscsiadm: support multiple params in one call
+      iscsid: remove DCB support
+      iscsiadm: print port speed and link state
+      iscsi tools: check for loaded module before loading
+      iscsistart: have iscsistart use same multi param code as iscsiadm
+      iscsi tools: print and load boot transport
+      iscsiadm: load iface before checking for hostno/mac match
+      iscsistart: fix iface overriding
+      iscsiadm: make sure offload drivers are loaded in host mode
+      iscsi tools: have iscsi tools bring up offload net iface
+      iscsi tools: fix bnx2i login
+      iscsi tools: fix ipv6 handling
+      iscsistart: fix invalid param handling
+      iscsiadm: added command line option '--interval'
+      iscsi tools: fix unknown param warnings
+      iscsi tools: fix socket leak in transport probe
+      iscsi tools: remove useless NULL iface check
+      iscsi tools: use strlpy in net code
+
+Nilesh Javali (1):
+      iscsi tools: update documents for CHAP command
+
+Rahul Gupta (1):
+      iscsi tools: Displaying timeout and CHAP in iscisadm info
+
+Vikas Chaudhary (2):
+      iscsi tools: update documents for ping command
+      iscsi tools: remove un-necessary print message
+
+Wang Sheng-Hui (1):
+      usr/config.h: fix comment for struct iscsi_session_timeout_config
+

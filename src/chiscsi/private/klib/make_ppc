@@ -1,0 +1,17 @@
+#####################################################################
+# Assumptions are basically that all the .c files in the CWD are modules
+# for the library and that all .h files are the interface to the library.
+#####################################################################
+#include ../../../make/setting_ppc.make
+
+# i386 specific flags
+EXTRA_FLAGS =  -pipe
+# prevent gcc from keeping the stack 16 byte aligned
+EXTRA_FLAGS += $(call cc-option,-mpreferred-stack-boundary=2)
+
+# powerpc: katmai
+EXTRA_FLAGS += -mpowerpc -mcpu=440
+
+PLATNAME = ppc
+
+include ./make_common

@@ -1,0 +1,31 @@
+K 10
+svn:ignore
+V 176
+*.o
+*.mod.c
+*.ko
+*.ko.cmd
+*.o.cmd
+.tmp_versions
+Modules.symvers
+Module.symvers
+modules.order
+Module.markers
+.depend*
+iscsi-scst-adm
+iscsi-scstd
+fileio_tgt
+iscsi_scst_itf_ver.h
+
+K 13
+svn:mergeinfo
+V 373
+/branches/1.0.1.x/scripts:731
+/branches/ibmvstgt-port/scripts:2370-2654,2677,2680-2681,2723
+/branches/pr/scripts:1584-1713
+/branches/srpt-separate-rx-tx-buffers/scripts:1492,2384-2441
+/branches/srpt-separate-rx-tx-buffers-2/scripts:2381-2383
+/branches/sysfs/scripts:787-1227
+/branches/sysfs-changes/scripts:2896-2897,2901
+/branches/sysfs-tree-changes/scripts:2972,3129,3142
+END

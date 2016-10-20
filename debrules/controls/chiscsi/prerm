@@ -1,0 +1,13 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+rm -f /sbin/chinfotool
+if [ -f /etc/chelsio-iscsi/chiscsi.conf ] ; then
+        cp -f /etc/chelsio-iscsi/chiscsi.conf /etc/chelsio-iscsi/chiscsi.conf.rpmsave
+        echo "chiscsi.conf saved to chiscsi.conf.rpmsave"
+fi
+
+exit 0
+

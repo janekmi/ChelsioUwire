@@ -1,0 +1,84 @@
+.\" -*- nroff -*-
+.\" Copyright 2015 by Chelsio Communications.  All Rights Reserved.
+.TH RBDCTL "8" "Aug 2015" "rbdctl 1.0" "Linux"
+.SH "NAME"
+rbdctl \- RDMA Block Device (RBD) driver configuration utility
+.SH "SYNOPSIS"
+.B rbdctl \-h
+.TP
+.B rbdctl \-l
+.TP
+.B rbdctl \-n \-a \fIaddr_or_name\fR \-d \fItarget_device\fR [\-p \fIport_number\fR]
+.TP
+.B rbdctl \-r \-d \fIinitiator_device\fR
+.TP
+.BI rbdctl
+.SH DESCRIPTION
+rbdctl is a configuration utility for the Chelsio RDMA Block Device
+(RBD) initiator.  It allows adding new target devices and removing existing
+devices.  The rbdi module must be loaded in order to use rbdctl.  Targets must
+have the rbdt module loaded and some block devices available (and not being used
+by the target system).  EG: /dev/nvme0n1 or /dev/ram0.
+.PP
+On the initator node, the target devices get named /dev/rbdiX where
+X starts at 0, and increments as target devices are added via rbdctl.
+So the first target device added would be /dev/rbdi0, and second would
+be /dev/rbdi1, etc.  You can list the currently attached devices with
+the \-l or \-\-list option.
+
+.SH "OPTIONS"
+
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Show usage information.
+
+.TP
+\fB\-l\fR, \fB\-\-list\fR
+List connected targets.
+
+.TP
+\fB\-n\fR, \fB\-\-new\fR
+Add a new target device. You must specify a target \fIaddress\fR with
+\-a and a target \fIdevice\fR with \-d and optionally a \fIport_number\fR
+with \-p.
+
+.TP
+\fB\-r\fR, \fB\-\-rem\fR
+Remove an existing initiator device. You must specify the initiator
+\fIdevice\fR with \-d.
+
+.TP
+\fB\-a\fR \fIaddr_or_name\fR, \fB\-\-addr=\fIaddr_or_name\fR
+Target node IPv4 address or hostname.  This is mandatory when adding
+new targets with \-n.
+
+.TP
+\fB\-d\fR \fIdevice\fR, \fB\-\-dev=\fIdevice\fR
+When adding targets, this specifies the target \fIdevice name\fR to
+be connected.  For removing existing initiator devices, this specifies
+the initator device to remove.  This is required for both the \-n and
+\-r flags.
+
+.TP
+\fB\-p\fR \fIport_number\fR, \fB\-\-port=\fIport_number\fR
+Specifies the IP \fIport number\fR that the target node is listening on.
+If not specified, the default of 65000 is used.
+
+.SH "EXAMPLES"
+.TP
+To add the device /dev/nvme0n1 from the target host with address 192.168.1.112:
+rbdctl -n -a 192.168.1.112 -d /dev/nvme0n1
+
+.TP
+To remove the first rbd device added:
+rbdctl -r -d /dev/rbdi0
+
+.SH BUGS
+None known.
+.SH "AUTHOR"
+.B rbdctl
+was written by Steve Wise.
+
+.SH "AVAILABILITY"
+.B rbdctl
+is available from Chelsio Communications.

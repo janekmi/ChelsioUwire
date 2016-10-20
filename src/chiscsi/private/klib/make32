@@ -1,0 +1,13 @@
+# i386 specific flags
+EXTRA_FLAGS = -m32 -pipe -msoft-float
+# prevent gcc from keeping the stack 16 byte aligned
+EXTRA_FLAGS += $(call cc-option,-mpreferred-stack-boundary=2)
+
+ifeq ($(REGPARM),1)
+  EXTRA_FLAGS += -mregparm=3
+  PLATNAME = i386.regparm
+else
+  PLATNAME = i386
+endif
+
+include ./make_common

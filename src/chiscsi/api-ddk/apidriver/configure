@@ -1,0 +1,3 @@
+#!/bin/bash
+
+export CHDIR=`pwd | awk '{split($0,a,"/api-ddk"); print a[1]}'`

@@ -1,0 +1,1195 @@
+diff --git a/chiscsi/base/base.c b/chiscsi/base/base.c
+--- a/chiscsi/base/base.c
++++ b/chiscsi/base/base.c
+@@ -38,11 +38,6 @@ void os_target_cleanup(void);
+ MODULE_AUTHOR(MOD_AUTHOR);
+ MODULE_LICENSE(MOD_LICENSE);
+ MODULE_DESCRIPTION(DRIVER_STRING " v" DRIVER_VERSION);
+-#ifdef __ACL_LM__
+-MODULE_VERSION(DRIVER_VERSION "-" BUILD_VERSION "+");
+-#else
+-MODULE_VERSION(DRIVER_VERSION "-" BUILD_VERSION);
+-#endif
+ 
+ /* Module parameters */
+ unsigned int cxgb3_mpool_kb = 0;
+diff --git a/chiscsi/private/Makefile b/chiscsi/private/Makefile
+--- a/chiscsi/private/Makefile
++++ b/chiscsi/private/Makefile
+@@ -17,7 +17,7 @@ export enable_lm
+ 
+ $(warning platform = $(PLATFM))
+ 
+-all: kernel_lib user_lib license
++all: kernel_lib user_lib
+ 
+ kernel_lib:
+ 	$(MAKE) -C klib
+@@ -25,9 +25,6 @@ kernel_lib:
+ user_lib:
+ 	$(MAKE) -C ulib
+ 
+-license:
+-	$(MAKE) -C swlicense
+-
+ clean:
+ 	$(MAKE) -C klib clean
+ 	$(MAKE) -C ulib clean
+diff --git a/chiscsi/private/klib/license/iscsi_license_private.c b/chiscsi/private/klib/license/iscsi_license_private.c
+--- a/chiscsi/private/klib/license/iscsi_license_private.c
++++ b/chiscsi/private/klib/license/iscsi_license_private.c
+@@ -3,1001 +3,4 @@ void iscsi_netdev_event(void *ndev, void
+ {
+ 	return;
+ }
+-
+-#else
+-
+-/*
+- * license check
+- */
+-
+-#include <common/os_builtin.h>
+-#include <common/os_export.h>
+-#include <common/iscsi_common.h>
+-#include <common/iscsi_netdev.h>
+-#include <iscsi_structs.h>
+-#include <iscsi_global.h>
+-#include <iscsi_license_api.h>
+-
+-#include <iscsi_license_struct.h>
+-#include <iscsi_license_struct_v1.2.h>
+-
+-struct eth_dev {
+-	struct eth_info e_info;
+-        unsigned int e_flag;
+-#define ETH_FLAG_LICENSED	0x1
+-#define ETH_FLAG_CHELSIO_NIC	0x2
+-#define ETH_FLAG_USED		0x4	/* has been used for iscsi traffic */
+-	unsigned int e_days_total[ISCSI_NODETYPE_MAX];
+-	unsigned int e_days_used[ISCSI_NODETYPE_MAX];
+-        void *e_ndev;
+-        void *e_pdev;
+-        struct eth_dev *e_next;
+-};
+-
+-/* for struct eth_dev */
+-#define eth_dev_enqueue(L,Q,P) \
+-	enqueue_tail(L,struct eth_dev,e_next,Q,P)
+-#define eth_dev_dequeue(L,Q,P) \
+-	dequeue_head(L,struct eth_dev,e_next,Q,P)
+-#define eth_dev_qremove(L,Q,P) \
+-	qremove(L,struct eth_dev,e_next,Q,P)
+-#define eth_dev_qsearch_by_ndev(L,Q,P,V) \
+-	qsearch_by_field_value(L,struct eth_dev,e_next,Q,P,e_ndev,V)
+-
+-#include "lk_lib.c"
+-#include "lk_lib_v1.2.c"
+-
+-/*
+- * license related variables
+- */
+-#define LICENSE_LEN \
+-	(sizeof(struct license) + KEYFILE_ETH_MAX * sizeof(struct eth_info))
+-
+-/*for version 1.2*/
+-#define LICENSE_LEN_V1_2 \
+-	(sizeof(struct license_v1_2) + KEYFILE_ETH_MAX_V1_2 * sizeof(struct eth_info))
+-static struct license_v1_2 *lcsp_v1_2 = NULL;
+-
+-/* keyfile buffer */
+-static int kbl = 0;
+-static char *kbf = NULL;
+-static char *kbf_s = NULL;
+-static struct license *lcsp = NULL;
+-
+-/* decryption buffer */
+-static char   *matrix = NULL;
+-static char   *rmatrix = NULL;
+-
+-/* if rescan eth needed */
+-static unsigned int rescan = 0;
+-
+-/* for expiration date tracking */
+-static int hours_passed = 0;
+-static void *cs_timer = NULL;
+-static unsigned long hs_start[PRODUCT_MAX];
+-static unsigned long hs_left[PRODUCT_MAX];
+-
+-/* netdev queue */
+-static iscsi_queue *ndevq = NULL;
+-
+-/* NOTE -- 
+-   we don't want to print any useful (or even readable) msg from this 
+-   file, in case someone is just playing with the key files to see if
+-   anything can be figured out.
+-   So, make sure __LICENSE_DEBUG__ is not defined when check into the CVS.
+- */
+-//#define __LICENSE_DEBUG__
+-
+-#ifdef  __LICENSE_DEBUG__
+-#define license_log_debug(fmt,...)	os_log_info(fmt,__VA_ARGS__)
+-#else
+-#define license_log_debug(fmt,...)	
+-#endif
+-
+-#define license_log_info(fmt,...)	os_log_info("l" fmt,__VA_ARGS__)
+-
+-static inline int nodetype_to_product(int nodetype)
+-{
+-	if (nodetype == ISCSI_TARGET)
+-		return PROD_ISCSI_TARGET;
+-	else if (nodetype == ISCSI_INITIATOR)
+-		return PROD_ISCSI_INITIATOR;
+-	else
+-		return -ISCSI_EINVAL;
+-}
+-
+-/*
+- * ethX functions
+- */
+-static inline void chelsio_eth_read_eval_days_used(struct eth_dev *edev)
+-{
+-	int i;
+-
+-	for (i = 0; i < ISCSI_NODETYPE_MAX; i++) {
+-		unsigned char used = 0;
+-
+-		os_netdev_read_eeprom(edev->e_ndev, 0xd54 + i, &used, 1);
+-		/* temporary workaround to enable default eval license
+-		   work on Chimney enabled cards */
+-		if (used == 0x20) {
+-			used = 0;
+-			os_netdev_write_eeprom(edev->e_ndev,  0xd54 + i,
+-						&used, 1);
+-		}
+-		edev->e_days_used[i] = used;
+-		license_log_debug("license: %s, nodetype %d, days used %u.\n",
+-				(char *)edev->e_ndev, i, edev->e_days_used[i]);
+-	}
+-}
+-
+-static inline int chelsio_eth_set_eval_days_used(struct eth_dev *edev,
+-						 int nodetype)
+-{
+-	unsigned char used = edev->e_days_used[nodetype];
+-	/* program days used in eeprom */
+-	license_log_debug("license: %s, nodetype %d, set days used %u.\n",
+-			(char *)edev->e_ndev, nodetype, used);
+-	return os_netdev_write_eeprom(edev->e_ndev, 0xd54 + nodetype, &used, 1);
+-}
+-
+-static inline void chelsio_eth_calc_eval_days_total(void)
+-{
+-	int i, prod;
+-	unsigned long days;	
+-	struct eth_dev *edev;
+-
+-	for (i = 0; i < ISCSI_NODETYPE_MAX; i++) {
+-		prod = nodetype_to_product(i);
+-	    	if (license_flag_set(lcsp, prod, FLAG_EVAL_BIT)) 
+-			days = days_from_duration(&lcsp->product[prod].duration);
+-		else
+-			days = 0;
+-
+-		os_lock_irq(ndevq->q_lock);
+-       		for (edev = ndevq->q_head; edev; edev = edev->e_next)
+-			if (edev->e_flag & ETH_FLAG_CHELSIO_NIC) {
+-				license_log_debug("license: %s, nodetype %d, eval days %u.\n",
+-						(char *)edev->e_ndev, i, days);
+-				edev->e_days_total[i] = (unsigned int)days;
+-			}
+-		os_unlock_irq(ndevq->q_lock);
+-	}
+-}
+-
+-static inline void chelsio_eth_calc_eval_days_total_v1_2(void)
+-{
+-        int i, prod;
+-        unsigned long days;
+-        struct eth_dev *edev;
+-
+-        for (i = 0; i < ISCSI_NODETYPE_MAX; i++) {
+-                prod = nodetype_to_product(i);
+-                if (license_flag_set_v1_2(lcsp_v1_2, prod, FLAG_EVAL_BIT))
+-                        days = days_from_duration(&lcsp_v1_2->duration[prod]);
+-                else
+-                        days = 0;
+-
+-                os_lock_irq(ndevq->q_lock);
+-                for (edev = ndevq->q_head; edev; edev = edev->e_next)
+-                        if (edev->e_flag & ETH_FLAG_CHELSIO_NIC) {
+-                                license_log_debug("license: %s, nodetype %d, eval days %u.\n",
+-                                                (char *)edev->e_ndev, i, days);
+-                                edev->e_days_total[i] = (unsigned int)days;
+-                        }
+-                os_unlock_irq(ndevq->q_lock);
+-        }
+-}
+-
+-
+-static void chelsio_eth_eval_days_decrement(int nodetype)
+-{
+-	struct eth_dev *edev;
+-
+-	os_lock_irq(ndevq->q_lock);
+-       	for (edev = ndevq->q_head; edev; edev = edev->e_next) {
+-		if ((edev->e_flag & ETH_FLAG_CHELSIO_NIC) &&
+-		    (edev->e_flag & ETH_FLAG_USED)) {
+-			license_log_debug("license: %s, nodetype %d, decr. eval days.\n",
+-					(char *)edev->e_ndev, nodetype);
+-			edev->e_days_used[nodetype]++;
+-			chelsio_eth_set_eval_days_used(edev, nodetype);
+-		}
+-	}
+-	os_unlock_irq(ndevq->q_lock);
+-}
+-
+-static int eth_mark_used(struct eth_dev *edev, int nodetype)
+-{
+-	if (!(edev->e_flag & ETH_FLAG_USED)) {
+-		/* first used with this module */
+-		edev->e_flag |= ETH_FLAG_USED;
+-		license_log_debug("%s, nodetype %d first use.\n",
+-				(char *)edev->e_ndev, nodetype);
+-	} 
+-	/* for Chelsio NIC, check if the eval already expired in VPD */
+-	if (edev->e_flag & ETH_FLAG_CHELSIO_NIC &&
+-	    edev->e_days_total[nodetype] &&
+-	    edev->e_days_used[nodetype] >=
+-		edev->e_days_total[nodetype]) {
+-		license_log_info("%s, nodetype %d eval expired.\n",
+-				(char *)edev->e_ndev, nodetype);
+-		return -ISCSI_EINVAL;
+-	}
+-	return 0;
+-}
+-
+-/*
+- * network device event handling: 
+- *	down, 
+- *	up, 
+- *	register
+- *	mac address change
+- */
+-static void eth_add(void *ndev, void *pdev)
+-{
+-	struct eth_dev *edev;
+-	unsigned char *p;
+-	char *dev_mac = NULL;
+-	eth_dev_qsearch_by_ndev(lockirq, ndevq, edev, ndev);
+-	if (edev) {
+-		license_log_debug("interface %s, already exist 0x%p.\n",
+-				(char *)ndev, edev);
+-		return;
+-	}
+-
+-	edev = os_alloc(sizeof(struct eth_dev), 1, 1);
+-	if (!edev) {
+-		license_log_debug("interface %s, OOM.\n", (char *)ndev);
+-		return;
+-	}
+-
+-	edev->e_ndev = ndev;
+-	edev->e_pdev = pdev;
+-
+-	p = ((unsigned char *)ndev) + os_netdev_perm_addr_off;
+-	
+-	memcpy(edev->e_info.mac, p, ETH_MAC_ADDR_MAX_LEN);
+-
+-	/* Hyper-V issue
+-	* If the MAC Address is 0, Try getting it from the dev_list
+-    	* maintained in the kernel
+-        */
+-	if(edev->e_info.mac[0] == 0 && edev->e_info.mac[1] == 0 &&
+-			edev->e_info.mac[2] == 0 && edev->e_info.mac[3] == 0 &&
+-			edev->e_info.mac[4] == 0 && edev->e_info.mac[5] == 0)
+-		dev_mac = os_display_macs(ndev);
+-	
+-	if(dev_mac != NULL)
+-		memcpy(edev->e_info.mac, dev_mac, ETH_MAC_ADDR_MAX_LEN);
+-
+-	if (pdev) {
+-		edev->e_info.linkspeed = os_netdev_speed(ndev);
+-		edev->e_info.vendor_id = *(unsigned short *)
+-					(((unsigned char *)pdev) +
+-					 os_pcidev_vendor_off);
+-		edev->e_info.device_id = *(unsigned short *)
+-					(((unsigned char *)pdev) +
+-					 os_pcidev_device_off);
+-#ifdef __CHISCSI_BLANKET_LICENSE_ENABLED__
+-		if (is_chelsio_nic(edev->e_info.vendor_id) &&
+-		    is_chelsio_adapter(edev->e_info.device_id)) {
+-			struct eth_info *einfo = &edev->e_info;
+-
+-			edev->e_flag |= ETH_FLAG_CHELSIO_NIC;
+-			license_log_info("Chelsio %s, 0x%x, "
+-				"%02X:%02X:%02X:%02X:%02X:%02X\n",
+-				(char *)edev->e_ndev, einfo->device_id,
+-				einfo->mac[0], einfo->mac[1], einfo->mac[2],
+-				einfo->mac[3], einfo->mac[4], einfo->mac[5]);
+-			//chelsio_eth_read_eval_days_used(edev);
+-		}
+-#endif
+-	}
+-		
+-	eth_dev_enqueue(lockirq, ndevq, edev);
+-	license_log_debug("interface %s added.\n", (char *)ndev);
+-#ifdef __LICENSE_DEBUG__
+-	eth_info_display(L_VERSION_MAJOR, L_VERSION_MINOR,
+-			&edev->e_info, NULL, 1, os_printf);
+-#endif
+-}
+-
+-static void eth_remove(void *ndev, void *pdev)
+-{
+-	struct eth_dev *edev;
+-
+-	eth_dev_qsearch_by_ndev(lockirq, ndevq, edev, ndev);
+-	if (edev) {
+-		eth_dev_qremove(lockirq, ndevq, edev);
+-		os_free(edev);
+-		license_log_debug("interface %s removed.\n", (char *)ndev);
+-	}
+-}
+-
+-void iscsi_netdev_event(void *ndev, void *pdev, int event)
+-{
+-	struct eth_dev *edev;
+-
+-	license_log_debug("%s rcv event %d, ndev 0x%p, pdev 0x%p, q 0x%p.\n",
+-			(char *)ndev, event, ndev, pdev, ndevq);
+-
+-	if (!ndevq)
+-		return;
+-
+-	switch(event) {
+-		case OS_NETDEV_REGISTER:
+-			eth_add(ndev, pdev);
+-			eth_dev_qsearch_by_ndev(lockirq, ndevq, edev, ndev);
+-			if (edev) {
+-//				if (is_chelsio_nic(edev->e_info.vendor_id))
+-					edev->e_flag |= ETH_FLAG_LICENSED;
+-			}
+-			break;
+-		case OS_NETDEV_UNREGISTER:
+-			rescan = 1;
+-			eth_remove(ndev, pdev);
+-			break;
+-		case OS_NETDEV_UP:
+-			eth_dev_qsearch_by_ndev(lockirq, ndevq, edev, ndev);
+-			if (edev && pdev) {
+-				edev->e_info.linkspeed = os_netdev_speed(ndev);
+-				rescan = 1;
+-			}
+-			break;
+-	}
+-}
+-
+-static int license_match_eth(struct eth_info *ethlist, int ethmax)
+-{
+-	struct eth_dev *edev;
+-	int	i, match = 0;
+-	int 	rv = 0;
+-
+-	/* reset license matching flag */
+-	os_lock_irq(ndevq->q_lock);
+-	for (edev = ndevq->q_head; edev; edev = edev->e_next)
+-		edev->e_flag &= ~ETH_FLAG_LICENSED;
+-
+-	/* make sure all licensed devices are present */
+-	for (i = 0; i < ethmax; i++) {
+-		for (edev = ndevq->q_head; edev; edev = edev->e_next) {
+-			if (!memcmp(edev->e_info.mac, ethlist[i].mac, ETH_MAC_ADDR_MAX_LEN) &&
+-					edev->e_info.vendor_id == ethlist[i].vendor_id &&
+-					edev->e_info.device_id == ethlist[i].device_id){
+-
+-				edev->e_flag |= ETH_FLAG_LICENSED;
+-				match++;
+-				license_log_debug("matched license eth %s.\n",
+-						(char *)edev->e_ndev);
+-				/* if cannot get the speed info, let it pass for now */
+-				if (edev->e_info.linkspeed && ethlist[i].linkspeed &&
+-						edev->e_info.linkspeed > ethlist[i].linkspeed) {
+-					os_log_warn("%s speed %u > %u.\n",
+-							(char *)edev->e_ndev,
+-							edev->e_info.linkspeed,
+-							ethlist[i].linkspeed);
+-					rv = -ISCSI_EMISMATCH;
+-					goto done;
+-				}
+-				break;
+-			}
+-		}
+-	}
+-
+-	license_log_debug("Total matched license dev: %d \n", match);
+-
+-	/* if at least one mac found from keyfile, enable all devices */
+-	if (match || ethmax == 0) {
+-		for (edev = ndevq->q_head; edev; edev = edev->e_next)
+-			//if (is_chelsio_nic(edev->e_info.vendor_id))
+-				edev->e_flag |= ETH_FLAG_LICENSED;
+-	} else {
+-		rv = -ISCSI_EMISMATCH;
+-	}
+-
+-done:
+-	os_unlock_irq(ndevq->q_lock);
+-
+-	return rv;
+-}
+-
+-void iscsi_record_timestamp_v1_2(unsigned long hours)
+-{
+-	int i;
+-
+-	for (i = 0; i < PRODUCT_MAX_V1_2; i++) {
+-		if (hs_start[i] != hours) {
+-			hs_start[i] = hours;
+-			license_log_debug("license timestamp start: %s, %lu.\n",
+-					 product_string(i), hs_start[i]);
+-		}
+-	}
+-}
+-
+-/*
+- * timestamp/license duration management
+- * hourly timer for keep track of expiration date
+- */
+-void iscsi_record_timestamp(unsigned long hours)
+-{
+-	int i;
+-
+-	for (i = 0; i < PRODUCT_MAX; i++) {
+-		if (hs_start[i] != hours) {
+-			hs_start[i] = hours;
+-			license_log_debug("license timestamp start: %s, %lu.\n",
+-					 product_string(i), hs_start[i]);
+-		}
+-	}
+-}
+-
+-
+-static void product_timer_expired(int prod)
+-{
+-	if (prod == PROD_ISCSI_TARGET) {
+-		license_log_debug("license stop all targets.\n", prod);
+-		iscsi_shutdown();
+-	}
+-}
+-
+-static void expiration_timer_hourly_pop(unsigned long);
+-static void expiration_timer_hourly_pop_v1_2(unsigned long);
+-static void expiration_timer_stop(void);
+-
+-static int expiration_timer_alloc(void)
+-{
+-	cs_timer = os_timer_alloc(1);
+-	if (!cs_timer)
+-		return -ISCSI_ENOMEM;
+-	os_timer_init(cs_timer, NULL) ;
+-	return 0;
+-}
+-
+-static void expiration_timer_destroy(void)
+-{
+-	if (cs_timer) {
+-		expiration_timer_stop();
+-		os_timer_free(cs_timer);
+-		cs_timer = NULL;
+-	}
+-}
+-
+-static void expiration_timer_stop(void)
+-{
+-	if (cs_timer) {
+-		license_log_debug("license timer stopped.\n", cs_timer);
+-		os_timer_stop(cs_timer);
+-	}
+-}
+-
+-static void expiration_timer_start(void)
+-{
+-	int i;
+-
+-	expiration_timer_stop();
+-
+-	for (i = 0; i < PRODUCT_MAX; i++)
+-		if (hs_left[i]) break;
+-
+-	if (i < PRODUCT_MAX) {
+-		license_log_debug("license timer started %d.\n", i);
+-		os_timer_start(cs_timer, 3600, expiration_timer_hourly_pop);
+-	}
+-}
+-
+-static void expiration_timer_start_v1_2(void)
+-{
+-        int i;
+-
+-        expiration_timer_stop();
+-
+-        for (i = 0; i < PRODUCT_MAX_V1_2; i++)
+-                if (hs_left[i]) break;
+-
+-        if (i < PRODUCT_MAX_V1_2) {
+-                license_log_debug("license timer started %d.\n", i);
+-                os_timer_start(cs_timer, 3600, expiration_timer_hourly_pop_v1_2);
+-        }
+-}
+-
+-static void expiration_timer_hourly_pop(unsigned long data)
+-{
+-	int i, prod;
+-	int restart = 0;
+-
+-	hours_passed++;
+-
+-	for (prod = 0; prod < PRODUCT_MAX; prod++) {
+-		if (hs_left[prod]) {
+-			hs_left[prod]--;
+-			if (hs_left[prod] == 0) {
+-				license_log_debug("License %s timer expired.\n",
+-						product_string(prod));
+-				product_timer_expired(prod);
+-			} else {
+-				restart = 1;
+-				license_log_debug("license timer %s left %lu.\n",
+-					product_string(prod), hs_left[prod]);
+-			}
+-		}
+-	}
+-
+-	if (hours_passed == 24) {
+-		hours_passed = 0;
+-		license_log_debug("license timer x24 hours has passed.\n", prod);
+-		for (i = 0; i < ISCSI_NODETYPE_MAX; i++) {
+-			prod = nodetype_to_product(i);
+-			if (hs_left[prod])
+-				chelsio_eth_eval_days_decrement(i);
+-		}
+-	}
+-
+-	if (restart)
+-		expiration_timer_start();
+-}
+-
+-static void expiration_timer_hourly_pop_v1_2(unsigned long data)
+-{
+-	int i, prod;
+-	int restart = 0;
+-
+-	hours_passed++;
+-
+-	for (prod = 0; prod < PRODUCT_MAX_V1_2; prod++) {
+-		if (hs_left[prod]) {
+-			hs_left[prod]--;
+-			if (hs_left[prod] == 0) {
+-				license_log_debug("License %s timer expired.\n",
+-						product_string(prod));
+-				product_timer_expired(prod);
+-			} else {
+-				restart = 1;
+-				license_log_debug("license timer %s left %lu.\n",
+-					product_string(prod), hs_left[prod]);
+-			}
+-		}
+-	}
+-
+-	if (hours_passed == 24) {
+-		hours_passed = 0;
+-		license_log_debug("license timer x24 hours has passed.\n", prod);
+-		for (i = 0; i < ISCSI_NODETYPE_MAX; i++) {
+-			prod = nodetype_to_product(i);
+-			if (hs_left[prod])
+-				chelsio_eth_eval_days_decrement(i);
+-		}
+-	}
+-
+-	if (restart)
+-		expiration_timer_start_v1_2();
+-}
+-
+-static int expiration_time_remaining(unsigned long curr_hour)
+-{
+-	int i;
+-
+-	for (i = 0; i < PRODUCT_MAX; i++) {
+-		unsigned long hours, diff;
+-
+-		/* not enabled */
+-		if (lcsp->product[i].flag == 0)
+-			continue;
+-
+-		if (curr_hour < hs_start[i]) {
+-			os_log_error("Time shift detect %s.\n",
+-				     product_string(i));
+-			hs_left[i] = 0;
+-			product_timer_expired(i);
+-			continue;
+-		} 
+-		diff = curr_hour - hs_start[i];
+-		hours = hours_from_duration(&lcsp->product[i].duration);
+-
+-		/* already expired */
+-		if (hours <= diff) {
+-			os_log_error("%s license already expired %lu < %lu.\n",
+-				     product_string(i), hours, diff);
+-			product_timer_expired(i);
+-		} else {
+-			hs_left[i] = hours - diff;
+-			license_log_debug("%s curr_hour %lu, start %lu, left %lu\n",
+-				 	product_string(i), curr_hour, hs_start[i],
+-					hs_left[i]);
+-		}
+-	}
+-
+-	expiration_timer_start();
+-	return 0;
+-}
+-
+-static int expiration_time_remaining_v1_2(unsigned long curr_hour)
+-{
+-        int i;
+-
+-        for (i = 0; i < PRODUCT_MAX_V1_2; i++) {
+-                unsigned long hours, diff;
+-
+-                /* not enabled */
+-                if (lcsp_v1_2->flag[i] == 0)
+-                        continue;
+-
+-                if (curr_hour < hs_start[i]) {
+-                        os_log_error("Time shift detect %s.\n",
+-                                     product_string(i));
+-                        hs_left[i] = 0;
+-                        product_timer_expired(i);
+-                        continue;
+-                }
+-                diff = curr_hour - hs_start[i];
+-                hours = hours_from_duration(&lcsp_v1_2->duration[i]);
+-
+-                /* already expired */
+-                if (hours <= diff) {
+-                        os_log_error("%s license already expired %lu < %lu.\n",
+-                                     product_string(i), hours, diff);
+-                        product_timer_expired(i);
+-                } else {
+-                        hs_left[i] = hours - diff;
+-                        license_log_debug("%s curr_hour %lu, start %lu, left %lu\n",
+-                                        product_string(i), curr_hour, hs_start[i],
+-                                        hs_left[i]);
+-                }
+-        }
+-
+-        expiration_timer_start_v1_2();
+-        return 0;
+-}
+-
+-
+-
+-/* 
+- * iscsi_process_license_buf --	entry point for decrypting the keyfile
+- * @buf,buflen -- buffer holding the license information 
+- * @thour -- current time
+- */
+-
+-#ifdef __CHISCSI_BLANKET_LICENSE_ENABLED__
+-static void generate_default_license(struct license *lcsp)
+-{
+-	struct eth_info *ethp = &lcsp->eth[0];
+-	struct eth_dev *edev;
+-
+-	memset(lcsp, 0, LICENSE_LEN);
+-
+-	os_lock_irq(ndevq->q_lock);
+-        for (edev = ndevq->q_head; edev; edev = edev->e_next) {
+-		license_log_debug("dflt lic, eth %s, flag 0x%x.\n",
+-				(char *)edev->e_ndev, edev->e_flag);
+-		if (edev->e_flag & ETH_FLAG_CHELSIO_NIC) {
+-			if (!lcsp->ethmax) {
+-				lcsp->ethmax = 1;
+-				memcpy(ethp, &edev->e_info,
+-					sizeof(struct eth_info));
+-				if (!ethp->linkspeed)
+-					/* assume 10G */
+-					ethp->linkspeed = 10000;
+-			}
+-			license_log_debug("dflt lic, find chl eth %s, max %u.\n",
+-					(char *)edev->e_ndev, lcsp->ethmax);
+-		}
+-	}
+-	os_unlock_irq(ndevq->q_lock);
+-
+-	license_log_debug("dflt license, maxeth %d.\n", lcsp->ethmax);
+-
+-	if (!lcsp->ethmax)
+-		return;
+-	/* enable the prod license with chelsio adapters */
+-	license_init_production_default(lcsp, PROD_ISCSI_TARGET);
+-}
+-#endif
+-
+-static int iscsi_process_license_buf(char *buf, int buflen, unsigned long thour)
+-{
+-	char ebuf[128];
+-	int  rv = 0;
+-
+-	license_log_debug("rcv buflen %d, ethmax %d.\n", buflen, lcsp->ethmax);
+-
+-	/* if no license key, generate the default license */
+-	if (!buf || !buflen) {
+-#ifdef __CHISCSI_BLANKET_LICENSE_ENABLED__
+-		/* no more automatic default license */
+-		if (!lcsp->ethmax)
+-			generate_default_license(lcsp);
+-		license_log_debug("use dflt, ethmax %d.\n", lcsp->ethmax);
+-		if (lcsp->ethmax)
+-			goto license_check;
+-#endif
+-		license_log_debug("NO cxgb nic found, no default license.\n", rv);
+-		return -ISCSI_EINVAL;
+-	}
+-
+-	/* no change in license key */
+-	if (!rescan && kbl && (kbl == buflen) &&
+-	    !(memcmp(buf, kbf, buflen))) {
+-		return 0;
+-	}
+-
+-#ifdef __CHISCSI_BLANKET_LICENSE_ENABLED__
+-license_check:
+-#endif
+-	/* reset the license */
+-	rescan = 0;
+-	kbl = 0;
+-	
+-	/* save a copy of encrypted data */
+-	memcpy(kbf_s, buf, buflen);
+-
+-	if (KEYFILE_LENGTH == buflen) {
+-		memset(lcsp, 0, sizeof(struct license));
+-
+-		buf_read_version(buf + MATRIX_SIZE, &lcsp->version[0], os_strtoul);
+-		decrypt_key_buffer(MATRIX_ORDER, buf, matrix, rmatrix);
+-
+-		rv = license_from_key_buffer(buf, MATRIX_SIZE, ebuf, lcsp, os_strtoul);
+-		if (rv < 0) {
+-			license_log_debug("license corrupted: %s.\n", ebuf);
+-			os_log_warn("license corrupted: %s.\n", ebuf);
+-			return rv;
+-		}
+-
+-		/* save the encrypted buffer */
+-		kbl = buflen;
+-		memcpy(kbf, kbf_s, buflen);
+-
+-	} else if (KEYFILE_LENGTH_V1_2 == buflen) {
+-	        memset(lcsp_v1_2, 0, sizeof(struct license_v1_2));
+-
+-	        buf_read_version_v1_2(buf + MATRIX_SIZE_V1_2, &lcsp_v1_2->version[0], os_strtoul);
+-        	decrypt_key_buffer(MATRIX_ORDER_V1_2, buf, matrix, rmatrix);
+-
+-	        rv = license_from_key_buffer_v1_2(buf, MATRIX_SIZE_V1_2, ebuf, lcsp_v1_2, os_strtoul);
+-        	if (rv < 0) {
+-                	license_log_debug("license corrupted: %s.\n", ebuf);
+-	                os_log_warn("license corrupted: %s.\n", ebuf);
+-        	        return rv;
+-	        }
+-
+-        	/* save the encrypted buffer */
+-	        kbl = buflen;
+-        	memcpy(kbf, kbf_s, buflen);
+-	}
+-
+-	if ((KEYFILE_LENGTH == buflen) || (!buf || !buflen)) {
+-#ifdef __LICENSE_DEBUG__
+-		license_display(lcsp, NULL, os_printf);
+-#endif
+-        	chelsio_eth_calc_eval_days_total();
+-	        rv = license_match_eth(&lcsp->eth[0], lcsp->ethmax);
+-        	if (rv < 0)
+-			goto done;
+-
+-	        rv = expiration_time_remaining(thour);
+-	} else {
+-#ifdef __LICENSE_DEBUG__
+-		license_display_v1_2(lcsp_v1_2, NULL, os_printf);
+-#endif
+-		chelsio_eth_calc_eval_days_total_v1_2();
+-	
+-		rv = license_match_eth(&lcsp_v1_2->eth[0], lcsp_v1_2->ethmax);
+-		if (rv < 0)
+-			goto done;
+-	
+-		rv = expiration_time_remaining_v1_2(thour);
+-	}
+-
+-done:
+-	if (rv < 0)
+-	        kbl = 0;
+-	return rv;
+-}
+-
+-int iscsi_process_license(char *buf, int buflen, unsigned long thour, unsigned long hours)
+-{
+-        int  rv = 0;
+-
+-        if ((buflen != KEYFILE_LENGTH) && (buflen ||  buf))  {
+-                if (buflen != KEYFILE_LENGTH_V1_2) {
+-                        license_log_debug("license corrupted: length  %d != %d or %d.\n",
+-                                        buflen, KEYFILE_LENGTH, KEYFILE_LENGTH);
+-                        return -ISCSI_EFORMAT;
+-                }
+-        }
+-	
+-	if (KEYFILE_LENGTH == buflen) {
+-		/* save timestamp if needed */
+-        	iscsi_record_timestamp(hours);
+-	} else
+-		iscsi_record_timestamp_v1_2(hours);
+-	
+-	rv = iscsi_process_license_buf(buf, buflen, thour);
+-	
+-        return rv;
+-}
+-
+-
+-int iscsi_license_check_net_device(void *ndev, int nodetype)
+-{
+-	struct eth_dev *edev;
+-	int prod = nodetype_to_product(nodetype);
+-
+-	if (prod < 0) {
+-		license_log_info("prod %d invalid.\n", prod);
+-		return prod;
+-	}
+-
+-	if (hs_left[prod] == 0) {
+-		license_log_info("prod %s expired.\n", product_string(prod));
+-		return -ISCSI_EINVAL;
+-	}
+-
+-	if (!ndev) {
+-		license_log_info("invalid net device.\n", prod);
+-		return -ISCSI_EINVAL;
+-	}
+-
+-	eth_dev_qsearch_by_ndev(lockirq, ndevq, edev, ndev);
+-
+-#if 0
+-	if (license_flag_set(lcsp, prod, FLAG_UNIVERSAL_BIT))
+-		return (void *)edev;
+-#endif
+-
+-	/* no match is found */
+-	if (!edev || !(edev->e_flag & ETH_FLAG_LICENSED)) {
+-		if (edev) 
+-			license_log_info("invalid net device, %s.\n",
+-					(char *)edev->e_ndev);
+-#if 0
+-		os_lock_irq(ndevq->q_lock);
+-       		for (edev = ndevq->q_head; edev; edev = edev->e_next)
+-		os_unlock_irq(ndevq->q_lock);
+-#endif
+-
+-		return -ISCSI_EINVAL;
+-	}
+-	
+-	if (eth_mark_used(edev, nodetype) < 0)
+-		return -ISCSI_EINVAL;
+-
+-	return 0;
+-}
+-
+-/* 
+- * APIs
+- */
+-int iscsi_license_nodetype_enabled(int nodetype)
+-{
+-	int prod = nodetype_to_product(nodetype);
+-	
+-	if (prod < 0) {
+-		license_log_debug("check license enabled nodetype bad %d.\n",
+-				nodetype);
+-		return 0;
+-	}
+-
+-	license_log_debug("check license enabled nodetype %d, 0x%x.\n",
+-			nodetype, lcsp->product[prod].flag);
+-	return lcsp->product[prod].flag;
+-}
+-
+-int iscsi_license_nodetype_expired(int nodetype)
+-{
+-	int prod = nodetype_to_product(nodetype);
+-	
+-	if (prod < 0) {
+-		license_log_debug("check license expired nodetype bad %d.\n",
+-				nodetype);
+-		return 1;
+-	}
+-
+-	license_log_debug("check license expired nodetype %d, %lu, %d.\n",
+-			nodetype, hs_left[prod], hs_left[prod] == 0);
+-	return hs_left[prod] == 0;
+-}
+-
+-/*
+- * Initialization & Cleanup
+- */
+-
+-void iscsi_license_cleanup(void)
+-{
+-	os_netdev_event_unsubscribe();
+-	expiration_timer_destroy();
+-
+-	if (kbf) {
+-		os_free(kbf);
+-		kbf = NULL;
+-	}
+-	if (kbf_s) {
+-		os_free(kbf_s);
+-		kbf_s = NULL;
+-	}
+-	if (matrix) {
+-		os_free(matrix);
+-		matrix = NULL;
+-	}
+-	if (rmatrix) {
+-		os_free(rmatrix);
+-		rmatrix = NULL;
+-	}
+-
+-	if (lcsp) {
+-		os_free(lcsp);
+-		lcsp = NULL;
+-	}
+-
+-        if (lcsp_v1_2) {
+-                os_free(lcsp_v1_2);
+-                lcsp_v1_2 = NULL;
+-        }
+-
+-	if (ndevq) {
+-		struct eth_dev *edev;
+-		os_lock_irq(ndevq->q_lock);
+-		eth_dev_dequeue(nolock, ndevq, edev);
+-		while (edev) {
+-			os_free(edev);
+-			eth_dev_dequeue(nolock, ndevq, edev);
+-		}
+-		os_unlock_irq(ndevq->q_lock);
+-		queue_free(ndevq);
+-		ndevq = NULL;
+-	}
+-}
+-
+-int iscsi_license_init(void)
+-{
+-	char buffer[80];
+-	int len = 0;
+-
+-	if (ndevq)
+-		return 0;
+-
+-	queue_alloc(ndevq);
+-	if (!ndevq)
+-		return -ISCSI_ENOMEM;
+-
+-	if (expiration_timer_alloc() < 0)
+-		goto err_out;
+-
+-
+-	/*For version 1.2 */
+-        lcsp_v1_2 = os_alloc(LICENSE_LEN_V1_2, 1, 1);
+-        if (!lcsp_v1_2)
+-                goto err_out;
+-
+-	/*For version 1.3 */
+-	kbf = os_alloc(KEYFILE_LENGTH, 1, 1);
+-	kbf_s = os_alloc(KEYFILE_LENGTH, 1, 1);
+-	matrix = os_alloc(MATRIX_SIZE, 1, 1);
+-	rmatrix = os_alloc(MATRIX_SIZE, 1, 1);
+-	lcsp = os_alloc(LICENSE_LEN, 1, 1);
+-	if (!kbf || !kbf_s || !matrix || !rmatrix || !lcsp)
+-		goto err_out;
+-
+-
+-	memset(kbf, 0, KEYFILE_LENGTH);
+-	memset(hs_start, 0, sizeof(hs_start));
+-	memset(hs_left, 0, sizeof(hs_left));
+-
+-	os_netdev_event_subscribe();
+-
+-#ifdef __CHISCSI_BLANKET_LICENSE_ENABLED__
+-	len = sprintf(buffer, "BL ");
+-#endif
+-	buffer[len] = 0;
+-	license_log_info("%sv1.3\n", buffer);
+-
+-	return 0;
+-
+-err_out:
+-	iscsi_license_cleanup();
+-	return -ISCSI_ENOMEM;
+-
+-q_lock_fail:
+-	queue_free(ndevq);
+-	return -ISCSI_ENOMEM;
+-}
+ #endif /* ifndef __NO_LICENSE_CHECK__ */
+diff --git a/chiscsi/private/klib/target/acl.c b/chiscsi/private/klib/target/acl.c
+--- a/chiscsi/private/klib/target/acl.c
++++ b/chiscsi/private/klib/target/acl.c
+@@ -147,9 +147,6 @@ static iscsi_target_acl *acl_configure(i
+ 	unsigned int iaddr_cnt = vp->v_num[ISCSI_VALUE_NUM_ACL_SADDR_IDX];
+ 	unsigned int taddr_cnt = vp->v_num[ISCSI_VALUE_NUM_ACL_DADDR_IDX];
+ 	int i, j, k;
+-#ifdef __ACL_LM__
+-	int elen = 0;
+-#endif
+ 	int rv;
+ 
+ 	if (!luncnt && lunmask) {
+@@ -196,43 +193,6 @@ static iscsi_target_acl *acl_configure(i
+ 		a->taddr_cnt = taddr_cnt;
+ 	}
+ 
+-#ifdef __ACL_LM__
+-	if (lunmask) {
+-		int rv;
+-		unsigned char mask;
+-
+-		i = luncnt % 8;
+-		if (i)
+-			mask = (1U << i) - 1;
+-		else
+-			mask = 0xFF;
+-
+-		elen = sprintf(ebuf, "ACL ");
+-		rv = lm_config_parse(a->rmask, a->wmask, luncnt,
+-				vp->v_str[ISCSI_VALUE_STR_ACL_LUN_IDX],
+-				ebuf + elen);
+-		if (rv < 0)
+-			goto err_out;
+-
+-		/* W implies R */
+-		for (i = 0; i < mask_len; i++) {
+-			a->rmask[i] |= a->wmask[i];
+-		}
+-
+-		/* check for ALL equivalent */
+-		for (i = 0; i < (mask_len - 1); i++)
+-			if ((a->rmask[i] & 0xFF) != 0xFF)
+-				break;
+-		if (i == (mask_len - 1) && (a->rmask[i] & mask) == mask)
+-			a->flag |= ACL_FLAG_ALLR;
+-		
+-		for (i = 0; i < (mask_len - 1); i++)
+-			if ((a->wmask[i] & 0xFF) != 0xFF)
+-				break;
+-		if (i == (mask_len - 1) && (a->wmask[i] & mask) == mask)
+-			a->flag |= ACL_FLAG_ALLW;
+-	} else 
+-#endif
+ 	{
+ 		a->flag = vp->v_num[ISCSI_VALUE_NUM_ACL_LUNALL_IDX];
+ 		/* W implies R */
+@@ -414,14 +374,6 @@ static int acl_display(iscsi_target_acl 
+ 	else {
+ 		if (a->flag & ACL_FLAG_ALLR)
+ 			len += sprintf(buf + len, "ALL:R");
+-
+-#ifdef __ACL_LM__
+-		if (a->wmask) {
+-			/* lun list present */
+-			len += lm_config_display(a->rmask, a->wmask,
+-					lunmax, buf + len, buflen - len);
+-		}
+-#endif
+ 	}
+ 
+ 	if (buf[len - 1] == ',')
+@@ -629,24 +581,6 @@ static int acl_build_session_lu_list(isc
+ 
+ 	if (a->flag & ACL_FLAG_ALLR)
+ 		sess->acl_lu_cnt = node->lu_cnt;
+-#ifdef __ACL_LM__
+-	if (a->rmask) {
+-		if (sess->acl_lun_max < node->lu_cnt) {
+-			if (sess->acl_lun_list)
+-				os_free(sess->acl_lun_list);
+-			sess->acl_lun_list = os_alloc(sizeof(unsigned int) *
+-						node->lu_cnt, 1, 1);
+-			if (!sess->acl_lun_list) {
+-				os_log_info("sess 0x%p, acl lu list %d OOM.\n",
+-					sess, node->lu_cnt);
+-				return -ISCSI_ENOMEM;
+-			}
+-			sess->acl_lun_max = node->lu_cnt;
+-		}
+-		sess->acl_lu_cnt = lm_make_lun_list(a->rmask,
+-					sess->acl_lun_list, node->lu_cnt);
+-	}
+-#endif
+ 
+ 	return 0;
+ }
+@@ -863,12 +797,6 @@ int iscsi_acl_scsi_command_check(iscsi_s
+ 		sc->sc_flag |= SC_FLAG_LUN_ACL_R | SC_FLAG_LUN_ACL_W;
+ 	else if (!a->wmask && (a->flag & ACL_FLAG_ALLR))
+ 		sc->sc_flag |= SC_FLAG_LUN_ACL_R;
+-#ifdef __ACL_LM__
+-	else if (lm_lun_writable(a->rmask, a->wmask, lun))
+-		sc->sc_flag |= SC_FLAG_LUN_ACL_R | SC_FLAG_LUN_ACL_W;
+-	else if (lm_lun_readable(a->rmask, a->wmask, lun))
+-		sc->sc_flag |= SC_FLAG_LUN_ACL_R;
+-#endif
+ 
+ 	return 0;
+ }
+diff --git a/chiscsi/private/klib/text/iscsi_config_keys.c b/chiscsi/private/klib/text/iscsi_config_keys.c
+--- a/chiscsi/private/klib/text/iscsi_config_keys.c
++++ b/chiscsi/private/klib/text/iscsi_config_keys.c
+@@ -435,30 +435,11 @@ static int acl_check_lunmask_list(char *
+ 		}
+ 
+ 		if (!all) {
+-#ifdef __ACL_LM__
+-			char *_c;
+-
+-			/* the lu list contains numbers seperated by comma */
+-			for (_c = lun; *_c; _c++) {
+-				if (!os_isdigit(*_c) &&
+-				    *_c != ',' && *_c != '~') {
+-					if (ebuf)
+-						sprintf(ebuf,
+-						"ERR! ACL, bad lun %s.\n",
+-						lun);
+-					os_log_info("ERR! ACL, bad lun %s, %c.\n",
+-						lun, *_c);
+-					*c = sav;
+-					return -ISCSI_EFORMAT;
+-				}
+-			}
+-#else
+ 			if (ebuf)
+ 				sprintf(ebuf, "ERR! ACL lun %s must be ALL.\n",
+ 					lun);
+ 			os_log_info("ERR! ACL lun %s must be ALL.\n", lun);
+ 			return -ISCSI_EFORMAT;
+-#endif
+ 		}
+ 
+ 		*c = sav;
+diff --git a/chiscsi/private/lib_defs.mk b/chiscsi/private/lib_defs.mk
+--- a/chiscsi/private/lib_defs.mk
++++ b/chiscsi/private/lib_defs.mk
+@@ -23,4 +23,4 @@ COMMON_DEFS		+= -D__SCMD_RELEASE_WAIT_FO
+ # !!! do NOT enable for GA/uwire build
+ #COMMON_DEFS		+= -D__CHISCSI_BLANKET_LICENSE_ENABLED__
+ 
+-#COMMON_DEFS		+= -D__NO_LICENSE_CHECK__	# no keyfile checkings */
++COMMON_DEFS		+= -D__NO_LICENSE_CHECK__	# no keyfile checkings */

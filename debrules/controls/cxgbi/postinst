@@ -1,0 +1,46 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+if [ -f /sbin/iscsiadm2 ]
+then
+        ln -s /sbin/iscsiadm2 /sbin/iscsiadm
+fi;
+
+if [ -f /sbin/iscsid2 ]
+then
+        ln -s /sbin/iscsid2 /sbin/iscsid
+fi
+
+if [ -f /sbin/iscsi-iname2 ]
+then
+        ln -s /sbin/iscsi-iname2 /sbin/iscsi-iname
+fi
+
+if [ -f /etc/iscsi/iscsid.conf.2 ]
+then
+        ln -s /etc/iscsi/iscsid.conf.2 /etc/iscsi/iscsid.conf
+fi
+
+if [ ! -f /etc/iscsi/initiatorname.iscsi ];
+then
+    echo "InitiatorName=`/sbin/iscsi-iname`" > /etc/iscsi/initiatorname.iscsi ;
+fi
+
+file=/etc/modprobe.d/libcxgb4.conf
+
+if [ -f ${file} ] ; then
+## Workaround for auto-loading infiniband drivers.
+	lines=`grep -n "^install cxgb4 " $file 2>/dev/null | sed 's/:.*//g' | sort -gr`
+	string="# Disabled by Chelsio Makefile on `date`"
+	for i in $lines; do
+	  sed -i "$i"'s/^install cxgb4\s/#install cxgb4 /' $file
+	  let i-=1
+	  sed -i "$i"'a'"$string" $file
+	done
+fi
+
+## Generate new module dependencies.
+depmod 2>/dev/null
+exit 0

@@ -1,0 +1,37 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+fwdir=/lib/firmware/cxgb4
+
+if [ ! -d ${fwdir} ]; then
+  /bin/rm -rf ${fwdir};
+  mkdir -p ${fwdir};
+fi;
+if [ -f ${fwdir}/t4fw.bin ] && [ ! -h ${fwdir}/t4fw.bin ]; then
+    mv -f ${fwdir}/t4fw.bin ${fwdir}/t4fw.bin_bak ;
+fi ;
+if [ -h ${fwdir}/t4fw.bin ]; then
+    /bin/rm -f ${fwdir}/t4fw.bin ;
+fi ;
+if [ -f ${fwdir}/t5fw.bin ] && [ ! -h ${fwdir}/t5fw.bin ]; then
+    ${__mv} -f ${fwdir}/t5fw.bin ${fwdir}/t5fw.bin_bak ;
+fi ;
+if [ -h ${fwdir}/t5fw.bin ]; then
+    /bin/rm -f ${fwdir}/t5fw.bin ;
+fi ;
+
+for file in $(/bin/ls ${fwdir}/*.bin 2>/dev/null); do
+    /bin/rm -f ${fwdir}/$(basename $file)
+done
+
+for file in $(/bin/ls ${fwdir}/*.cld 2>/dev/null); do
+    /bin/rm -f ${fwdir}/$(basename $file)
+done
+
+for file in $(/bin/ls ${fwdir}/*.txt 2>/dev/null); do
+    /bin/rm -f ${fwdir}/$(basename $file)
+done
+
+exit 0

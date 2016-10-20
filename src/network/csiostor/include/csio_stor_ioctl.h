@@ -1,0 +1,193 @@
+/*
+ *  Copyright (C) 2008-2014 Chelsio Communications.  All rights reserved.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the LICENSE file included in this
+ * release for licensing terms and conditions.
+ *
+ * Description:
+ *
+ */
+#ifndef __CSIO_STOR_IOCTL_H__
+#define __CSIO_STOR_IOCTL_H__
+
+// Shared across kernel & user code.
+
+#ifndef CSIO_ARRAY_SIZE
+#define CSIO_ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
+#endif
+
+#ifndef CSIO_ALIGN
+#define CSIO_ALIGN(__v, __r)		((((__v) + (__r) - 1) / (__r)) * (__r))
+#endif
+
+#define CSIO_STOR_IOCTL_MASK		0xFF00
+#define CSIO_STOR_IOCTL_OPCODE_MASK	0x00FF
+
+#define CSIO_STOR_GET_OPCODE(_x)	((_x) & CSIO_STOR_IOCTL_OPCODE_MASK)
+
+#define CSIO_STOR_HW			0x2200
+#define CSIO_STOR_FCOE			0x3300
+#define CSIO_STOR_ISCSI			0x4400
+#define CSIO_OS				0x5500
+#define CSIO_IMA			0x6600
+
+/* CSIO_STOR_HW - Sub opcodes*/
+
+#define CSIO_HW_PROBE			0x0001
+#define CSIO_HW_GET_CARD_INFO		0x0002
+#define CSIO_HW_RESERVED1		0x0003
+#define CSIO_HW_RESERVED2		0x0004
+#define CSIO_HW_GET_PORT_STATS		0x0005
+#define CSIO_HW_PORT_DCB_PARAMS		0x0006
+#define CSIO_HW_CARD_RESET		0x0007
+#define CSIO_HW_FUNCTION_RESET		0x0008
+
+#define CSIO_HW_SHOW			0x0009
+#define CSIO_HW_GET_SGE_Q_INFO		0x000A
+#define CSIO_HW_GET_SGE_FLQ_BUF_INFO	0x000B
+#define CSIO_HW_GET_SCSI_STATS		0x000C
+
+#define CSIO_HW_READ_REGISTER		0x000D
+#define CSIO_HW_WRITE_REGISTER		0x000E
+
+#define CSIO_HW_GET_MBOX		0x000F
+#define CSIO_HW_GET_CIM_QCFG		0x0010
+#define CSIO_HW_GET_CIM_LA		0x0011
+#define CSIO_HW_GET_CIM_PIF_LA		0x0012
+#define CSIO_HW_GET_CIM_MA_LA		0x0013
+#define CSIO_HW_GET_TP_LA		0x0014
+#define CSIO_HW_GET_ULPRX_LA		0x0015
+#define CSIO_HW_GET_MPS_TCAM		0x0016
+#define CSIO_HW_GET_CIM_IBQ		0x0017
+#define CSIO_HW_GET_CIM_OBQ		0x0018
+#define CSIO_HW_GET_CPL_STATS		0x0019
+#define CSIO_HW_GET_DDP_STATS		0x001A
+#define CSIO_HW_GET_TP_ERR_STATS	0x001B
+#define CSIO_HW_GET_TCP_STATS		0x001C
+#define CSIO_HW_GET_PM_STATS		0x001D
+#define CSIO_HW_GET_LB_STATS		0x001E
+#define CSIO_HW_GET_INTERNAL_MEM	0x001F
+#define CSIO_HW_GET_FWDEVLOG_INFO	0x0020
+#define CSIO_HW_GET_SGE_CNTX		0x0021
+#define CSIO_HW_GET_DCBX_INFO		0x0022
+#define CSIO_HW_GET_CIM_DIAGS		0x0023
+
+
+/* OS specific opcodes */
+#define CSIO_OS_FW_CONFIG_DOWNLOAD	0x0001
+#define CSIO_OS_GET_SCSI_QUEUES		0x0002
+#define CSIO_OS_FW_DOWNLOAD		0x0003
+#define CSIO_OS_GET_HOST_TRACE_BUF	0x0004
+#define CSIO_OS_CREATE_NPIV_VPORT	0x0005
+#define CSIO_OS_DELETE_NPIV_VPORT	0x0006
+#define CSIO_OS_LIST_NPIV_VPORT		0x0007
+#define CSIO_OS_GET_OSLNODE_INFO	0x0008
+#define CSIO_OS_GET_OSRNODE_INFO	0x0009
+#define CSIO_OS_GET_DRV_PARAMS		0x000A
+#define CSIO_OS_SET_DRV_PARAMS		0x000B
+#define CSIO_OS_FCOE_GET_LU_MAP_INFO	0x000E
+#define CSIO_OS_ELS_CT_PASSTHRU		0x000F
+#define CSIO_OS_ISCSI_DEL_TARGET	0x0011
+
+#define CSIO_OS_T4_REG_DUMP		0x00F0
+// Reserved for future use.
+//#define CSIO_OS_T5_REG_DUMP		0x00F1
+
+
+
+/* CSIO_STOR_FCOE/ISCSI - Sub opcodes*/
+#define CSIO_FCOE_GET_FCF_INFO			0x0001
+#define CSIO_FCOE_GET_PORT_INFO                 0x0002
+#define CSIO_FCOE_GET_LNODE_INFO		0x0003
+#define CSIO_FCOE_GET_RNODE_INFO		0x0004
+#define CSIO_FCOE_GET_LNODE_INFO_BY_FCID	0x0005
+#define CSIO_FCOE_GET_RNODE_INFO_BY_FCID	0x0006
+#define CSIO_FCOE_GET_STATS			0x0007
+
+#define CSIO_STOR_GET_PROTO_STATS	0x0010
+#define CSIO_STOR_GET_LOCAL_NODE_INFO	0x0011
+#define CSIO_STOR_GET_REMOTE_NODE_INFO	0x0012
+#define CSIO_STOR_PING			0x0013
+
+#define CSIO_FOISCSI_GET_COUNT_IOCTL		0x0001
+
+#define CSIO_FOISCSI_IFACE_LINK_UP_IOCTL	0x0002
+#define CSIO_FOISCSI_IFACE_LINK_DOWN_IOCTL	0x0003
+#define CSIO_FOISCSI_IFACE_GET_IOCTL		0x0005
+
+#define CSIO_FOISCSI_SESSION_INFO_IOCTL		0x0006
+#define CSIO_FOISCSI_ASSIGN_INSTANCE_IOCTL	0x0007
+#define CSIO_FOISCSI_CLEAR_INSTANCE_IOCTL	0x0008
+#define CSIO_FOISCSI_SHOW_INSTANCE_IOCTL	0x0009
+
+#define CSIO_FOISCSI_IFCONF_IPV4_SET_IOCTL	0x0010
+#define CSIO_FOISCSI_IFCONF_IPV4_GET_IOCTL	0x0011
+
+#define CSIO_FOISCSI_IFCONF_IPV4_DHCP_SET_IOCTL	0x0013
+#define CSIO_FOISCSI_IFCONF_IPV4_DHCP_GET_IOCTL	0x0014
+
+#define CSIO_FOISCSI_IFCONF_VLAN_SET_IOCTL	0x0016
+#define CSIO_FOISCSI_IFCONF_VLAN_GET_IOCTL	0x0017
+
+#define CSIO_FOISCSI_IFCONF_VLAN_DHCP_SET_IOCTL	0x0019
+#define CSIO_FOISCSI_IFCONF_VLAN_DHCP_GET_IOCTL	0x001a
+
+#define CSIO_FOISCSI_IFCONF_MTU_SET_IOCTL	0x001c
+#define CSIO_FOISCSI_IFCONF_MTU_GET_IOCTL	0x001d
+
+/* GLUE CHANGE */
+#define CSIO_FOISCSI_LOGIN_TO_TARGET		0x001e
+#define CSIO_FOISCSI_DISC_TARGS			0x001f
+#define CSIO_FOISCSI_LOGOUT_FROM_TARGET	0x0020
+
+#define CSIO_FOISCSI_PERSISTENT_GET_IOCTL	0x0021
+#define CSIO_FOISCSI_PERSISTENT_CLEAR_IOCTL	0x0022
+
+/* 0x23 - 0x28 used in ESXi only currently */
+#define CSIO_FOISCSI_PERSISTENT_MATCH_IOCTL     0x0023
+#define CSIO_FOISCSI_PERSISTENT_SESS_IOCTL      0x0024
+#define CSIO_FOISCSI_PERSISTENT_GET_TARG_IOCTL  0x0025
+#define CSIO_FOISCSI_PERSISTENT_GET_INST_IOCTL  0x0026
+#define CSIO_FOISCSI_PERSISTENT_SET_INST_IOCTL  0x0027
+#define CSIO_FOISCSI_PERSISTENT_SET_TARG_IOCTL  0x0028
+
+/* IPv6 */
+#define CSIO_FOISCSI_IFCONF_IPV6_SET_IOCTL	0x0029
+#define CSIO_FOISCSI_IFCONF_IPV6_GET_IOCTL	0x002A
+
+#define CSIO_FOISCSI_IFCONF_IPV6_DHCP_SET_IOCTL	0x002B
+#define CSIO_FOISCSI_IFCONF_IPV6_DHCP_GET_IOCTL	0x002C
+
+#define CSIO_STOR_HW_OPCODE(_x)		(CSIO_STOR_HW | (_x))
+#define CSIO_STOR_FCOE_OPCODE(_x)	(CSIO_STOR_FCOE | (_x))
+#define CSIO_STOR_FOISCSI_OPCODE(_x)	(CSIO_STOR_ISCSI | (_x))
+#define CSIO_OS_OPCODE(_x)		(CSIO_OS | (_x))
+#define CSIO_IMA_OPCODE(_x)		(CSIO_IMA | (_x))
+
+#define CSIO_DCBX_NUM_PARAMS            5
+
+typedef struct _csio_dcbx_info_t {
+	int		action;
+        uint8_t         portid;
+        uint32_t        pgid;
+        uint8_t         pgrate[8];
+        uint8_t         strict_priorate[8];
+	uint8_t		tsa[8];
+	uint8_t         pfc_num_tcs_supported;
+	uint8_t		pg_num_tcs_supported;
+        uint8_t         pfcen;
+        uint8_t         prio;
+        uint8_t         sel;
+        uint16_t        protocolid;
+} CSIO_DCBX_INFO, *PCSIO_DCBX_INFO, csio_dcbx_info_t;
+
+typedef struct _csio_cim_diag_info_t {
+	int32_t		cim_load;
+	int32_t		cim_tmp;
+
+	uint32_t	reserved[30];
+}CSIO_CIM_DIAG_INFO, *PCSIO_CIM_DIAG_INFO, csio_cim_diag_info_t;
+
+#endif /* __CSIO_STOR_IOCTL_H__ */

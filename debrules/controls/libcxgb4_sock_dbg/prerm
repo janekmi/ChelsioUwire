@@ -1,0 +1,15 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+lib="/usr/lib"
+
+if [ -f ${lib}/libcxgb4_sock_debug.so ]; then
+   unlink ${lib}/libcxgb4_sock_debug.so;
+fi;
+if [ -f ${lib}/libcxgb4_sock_debug.so.1 ]; then
+   unlink ${lib}/libcxgb4_sock_debug.so.1;
+fi;
+
+exit 0

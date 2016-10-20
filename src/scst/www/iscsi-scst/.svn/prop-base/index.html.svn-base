@@ -1,0 +1,10 @@
+K 13
+svn:mergeinfo
+V 443
+/branches/ibmvstgt-port/www/iscsi-scst/index.html:2395,2398,2508-2511,2552,2559,2566,2585,2677,2680-2681,2723
+/branches/pr/www/iscsi-scst/index.html:1584-1713
+/branches/srpt-separate-rx-tx-buffers/www/iscsi-scst/index.html:2384-2441
+/branches/srpt-separate-rx-tx-buffers-2/www/iscsi-scst/index.html:2381-2383
+/branches/sysfs-changes/www/iscsi-scst/index.html:2896-2897,2901
+/branches/sysfs-tree-changes/www/iscsi-scst/index.html:2972,3129,3142
+END

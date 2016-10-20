@@ -1,0 +1,10 @@
+This source implements the device driver for the fourth generation
+Chelsio Terminator adapter.
+The driver and build tools are still in progress.
+The target platform is 2.6.28 at this point.
+
+To compile and load the driver:
+cd cxgb4; make; insmod cxgb4.ko
+
+To compile and run cxgbtool:
+cd cxgbtool; make; ./cxgbtool <args>

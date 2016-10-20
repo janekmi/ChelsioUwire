@@ -1,0 +1,156 @@
+[PATCH] cxgb3 tx skb frag dma address support
+
+From: Karen Xie <kxie@chelsio.com>
+
+added support of physical address in skb frag list.
+
+Signed-off-by: Karen Xie <kxie@chelsio.com>
+---
+ src/cxgb3/sge.c     |   31 +++++++++++++++++++++++++++++++
+ src/cxgb3/sge_skb.h |   41 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 72 insertions(+), 0 deletions(-)
+ create mode 100644 src/cxgb3/sge_skb.h
+
+diff --git a/src/cxgb3/sge.c b/src/cxgb3/sge.c
+index 5606537..44575d1 100644
+--- a/src/cxgb3/sge.c
++++ b/src/cxgb3/sge.c
+@@ -31,6 +31,7 @@
+ #include "firmware_exports.h"
+ 
+ #include "cxgb3_compat.h"
++#include "sge_skb.h"
+ 
+ #define USE_GTS 0
+ 
+@@ -273,6 +274,9 @@ static inline void unmap_skb(struct sk_buff *skb, struct sge_txq *q,
+ 	nfrags = skb_shinfo(skb)->nr_frags;
+ 
+ 	while (frag_idx < nfrags && curflit < WR_FLITS) {
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++		if (!skb_flag_frag_phy_addr(skb)) {
++#endif
+ 		/*
+ 		 * frag->size might be a 16 bit integer, which is a problem 
+ 		 * for 64K page size configurations. Assuming the current
+@@ -286,6 +290,9 @@ static inline void unmap_skb(struct sk_buff *skb, struct sge_txq *q,
+ 
+ 		pci_unmap_page(pdev, be64_to_cpu(sgp->addr[j]), size,
+ 			       PCI_DMA_TODEVICE);
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++		}
++#endif
+ 		j ^= 1;
+ 		if (j == 0) {
+ 			sgp++;
+@@ -301,6 +308,9 @@ static inline void unmap_skb(struct sk_buff *skb, struct sge_txq *q,
+ 		d->addr_idx_coalesce_num = j;
+ 		d->sflit = curflit - WR_FLITS - j; /* sflit can be -1 */
+ 	}
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++	skb_zero_out_frags(skb);
++#endif
+ }
+ 
+ static inline void unmap_tx_pkt_coalesce_wr(struct sge_txq *q,
+@@ -372,11 +382,19 @@ static void free_tx_desc(adapter_t *adapter, struct sge_txq *q, unsigned int n)
+ 					 * them to free up memory tied down in
+ 					 * virtual machines ...
+ 					 */
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++					skb_zero_out_frags((struct sk_buff *)csd->skb[i]);
++#endif
+ 					dev_kfree_skb_any(csd->skb[i]);
+ 				}
+ 			else if (d->eop_coalesce)
++			{
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++				skb_zero_out_frags((struct sk_buff *)d->skb);
++#endif
+ 				/* see above: can be called from interrupt */
+ 				dev_kfree_skb_any(d->skb);
++			}
+ 		}
+ 		++d;
+ 		if (++cidx == q->size) {
+@@ -1099,6 +1117,12 @@ static inline unsigned int make_sgl(const struct sk_buff *skb,
+ 			if (!size)
+ 				size = PAGE_SIZE;
+ 
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++		if (skb_flag_frag_phy_addr(skb)) {
++			mapping = (dma_addr_t)(skb_get_frag_phy_addr(frag));
++//printk(KERN_INFO "%s: skb 0x%p, frag %d/%d, phy_addr 0x%lx,%u.\n", __func__, skb, i, nfrags, mapping, size);
++		} else
++#endif
+ 		mapping = pci_map_page(pdev, frag->page, frag->page_offset,
+ 				       size, PCI_DMA_TODEVICE);
+ 		sgp->len[j] = cpu_to_be32(size);
+@@ -1915,6 +1939,10 @@ static void deferred_unmap_destructor(struct sk_buff *skb)
+ 		pci_unmap_single(dui->pdev, *p++,
+ 				 skb->tail - skb->transport_header,
+ 				 PCI_DMA_TODEVICE);
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++	if (skb_flag_frag_phy_addr(skb))
++		return;
++#endif
+ 
+ 	si = skb_shinfo(skb);
+ 	for (i = 0; i < si->nr_frags; i++) {
+@@ -4197,6 +4225,9 @@ void t3_free_sge_resources(adapter_t *adap)
+  */
+ void t3_sge_start(adapter_t *adap)
+ {
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++	printk("%s: iscsi skb frag dma address support enabled.\n", adap->name);
++#endif
+ 	t3_set_reg_field(adap, A_SG_CONTROL, F_GLOBALENABLE, F_GLOBALENABLE);
+ }
+ 
+diff --git a/src/cxgb3/sge_skb.h b/src/cxgb3/sge_skb.h
+new file mode 100644
+index 0000000..bdce0d8
+--- /dev/null
++++ b/src/cxgb3/sge_skb.h
+@@ -0,0 +1,41 @@
++#ifndef __SGE_SKB_H__
++#define __SGE_SKB_H__
++
++#include "../t3_tom/tom_compat.h"
++#include "../t3_tom/cpl_io_state.h"
++
++/* pass the physical addresses in the skb fragments instead of kernel pages */
++#define __CXGB3_SKB_FRAG_PHY_ADDRESS__
++
++#ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS__
++
++/* use ulp_skb_cb.ulp_data for the flag */
++#define SKB_FLAG_FRAG_PHY_ADDR_BYTE	0
++#define SKB_FLAG_FRAG_PHY_ADDR		0xA
++
++#define skb_set_flag_frag_phy_addr(skb) \
++	(ULP_SKB_CB(skb)->ulp_data[SKB_FLAG_FRAG_PHY_ADDR_BYTE] = \
++	SKB_FLAG_FRAG_PHY_ADDR)
++#define skb_flag_frag_phy_addr(skb) \
++	(ULP_SKB_CB(skb)->ulp_data[SKB_FLAG_FRAG_PHY_ADDR_BYTE] == \
++	SKB_FLAG_FRAG_PHY_ADDR)
++#define skb_get_frag_phy_addr(frag)	(*((unsigned long long *)&(frag)->page))
++#define skb_set_frag_phy_addr(frag, phy)	\
++	do { \
++		skb_get_frag_phy_addr(frag) = phy; \
++	} while (0)
++
++static inline void skb_zero_out_frags(struct sk_buff *skb)
++{
++	int i;
++	if (skb_flag_frag_phy_addr(skb)) {
++		for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
++			skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
++			skb_set_frag_phy_addr(frag, 0UL);
++		}
++		skb_shinfo(skb)->nr_frags = 0;
++	}
++}
++#endif /* ifdef __CXGB3_SKB_FRAG_PHY_ADDRESS */
++
++#endif /* ifndef __SGE_SKB_H__ */

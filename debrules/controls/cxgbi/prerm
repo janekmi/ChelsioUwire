@@ -1,0 +1,19 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+k=1
+if [ -f /etc/iscsi/iscsid.conf ]
+then
+        rm -rf /etc/iscsi/iscsid.conf
+	while [ $k -lt 100 ] ; do
+	    if [ ! -f /etc/iscsi/iscsid.conf.rpmsave-$k ] ; then
+        	cp -f /etc/iscsi/iscsid.conf.2 /etc/iscsi/iscsid.conf.rpmsave-$k
+		break
+	    fi
+	k=`expr $k + 1 `
+	done
+fi
+
+exit 0

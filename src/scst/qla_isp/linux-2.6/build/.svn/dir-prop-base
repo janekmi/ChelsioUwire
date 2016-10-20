@@ -1,0 +1,28 @@
+K 10
+svn:ignore
+V 268
+*.o
+*.mod.c
+*.ko
+*.ko.cmd
+*.o.cmd
+.tmp_versions
+Modules.symvers
+Module.symvers
+modules.order
+Module.markers
+.depend*
+iscsi-scst-adm
+iscsi-scstd
+fileio_tgt
+iscsi_scst_itf_ver.h
+isp_target.c
+isp_target.c
+isp_library.c
+isp_cb_ops.c
+isp_pci.c
+isp_scst.c
+isp_linux.c
+isp.c
+
+END

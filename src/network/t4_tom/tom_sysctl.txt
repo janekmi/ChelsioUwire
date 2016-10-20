@@ -1,0 +1,68 @@
+This document describes the tunable parameters of the Chelsio TCP Offload
+Module.
+
+- max_host_sndbuf: A connection's send buffer is divided in two parts, one
+  residing in on-card memory and the rest in the host's RAM.  This parameter
+  determines the size of the latter part (max_tx_pages, described below,
+  determines the first part).  The RAM portion of the send buffer acts as a
+  staging area for data to be shipped to the TOE and in general needs to be
+  only modestly sized.  The default value is 48K.
+
+- tx_hold_thres: This parameter is used to decide whether a partially filled
+  TX buffer should be immediately forwarded to the TOE or whether it should be
+  kept to allow more data to accumulate.  Forwarding immediately may be
+  beneficial for latency but waiting to build fuller buffers reduces the
+  number of transfers between the host and the TOE and improves CPU
+  utilization.  A partially filled buffer is immediately forwarded if the
+  number of unacknowledged data for the connection is less than tx_hold_thres.
+  The default value is 0.
+
+- rx_credit_thres: Determines how many RX credits (number of bytes read since
+  the previous credit return) must have accumulated for a connection before
+  we return them to the TOE.  The default is 4K.
+
+- mss: Determines the maximum amount of payload shipped to the TOE in each
+  packet.  It defaults to the maximum allowed by the TOE configuration.
+
+- delayed_ack: Determines whether delayed ACK is enabled.  Defaults to 1 (on)
+  and changing it affects only new connections.  Note that turning off delayed
+  ACKs can be detrimental to performance if communicating with NICs.
+
+- max_conn: Maximum number of offloaded connections (excludes listeners).
+  This parameter is part of the TOE's admission control and defaults to -1,
+  which is unlimited.
+
+- soft_backlog_limit: Controls the effect a listening socket's accept queue
+  limit (the "backlog" argument of listen(2)) has on newly established
+  connections and on new connection requests (new SYNs).  If 0 the accept queue
+  limit is hard: connections established when the accept queue is full are
+  reset, while new connection attempts are accepted as long as there is space
+  in the SYN queue, regardless of the state of the accept queue at the time.
+  This may lead to connections completing their handshake only to be reset but
+  obeys the resource limits.
+  If 1 (default) the limit is soft: established connections will be added to the
+  accept queue even if they overflow it, however new connection attempts will
+  be accepted only if the accept queue is under its limit.  This mode modestly
+  violates resource limits but protects newly established connections.
+
+- recvmsg_spin_us: If 0 (default) a blocking read on a socket with no data
+  available will cause the thread to immediately deschedule waiting for data
+  to show up on the socket.  If non-zero, then the thread will spin for up
+  to recvmsg_spin_us microseconds waiting for data to appear on a socket
+  before descheduling.
+
+- recvmsg_ddp_wait_us: If 0 (default) a non-blocking read on a socket with no data
+  available and a DDP buffer posted will check for buffer invalidation
+  and if not invalidated immediately proceed to cancel the DDP operation.
+  If non-zero, then the thread will wait for up to recvmsg_ddp_wait_us microseconds
+  for the buffer to be invalidated before cancelling the DDP operation.
+
+- max_ddppages: If 1024 (default on x86) a read request can allocate up to
+  256 page pods on systems using 4k pages. This corresponds to a 4m DDP buffer
+  and can be increased up to the maximum DDP buffer offset the hardware supports.
+  Larger max_ddppages settings implies fewer connections can be supported doing DDP
+  with those size buffers.
+
+- ddp_maxfail: Maximum number of DDP page pod allocation failures. Once the limit
+  is reached DDP is disabled on the connection and not re-enabled. Defaults to 3.
+

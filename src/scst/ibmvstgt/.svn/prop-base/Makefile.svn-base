@@ -1,0 +1,7 @@
+K 13
+svn:mergeinfo
+V 190
+/branches/ibmvstgt-port/ibmvstgt/Makefile:2370-2449,2677,2680-2681,2723
+/branches/sysfs-changes/ibmvstgt/Makefile:2896-2897,2901
+/branches/sysfs-tree-changes/ibmvstgt/Makefile:2972,3129,3142
+END

@@ -1,0 +1,19 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+fwdir=/lib/firmware/cxgb4
+t4fw=/lib/firmware/cxgb4/t4fw
+
+for file in `/bin/ls ${fwdir}/*.bin 2>/dev/null`; do
+    cfirm=`echo $file | awk -F "-" '{print $1}' | head -1 | awk '{print $1}' 2>/dev/null`
+    if [  $cfirm = $t4fw ] ; then
+        /bin/ln -s ${fwdir}/$(basename $file) ${fwdir}/t4fw.bin
+    fi ;
+    if [ $cfirm = "/lib/firmware/cxgb4/t5fw" ] ; then
+        /bin/ln -s ${fwdir}/$(basename $file) ${fwdir}/t5fw.bin
+    fi
+done
+
+exit 0

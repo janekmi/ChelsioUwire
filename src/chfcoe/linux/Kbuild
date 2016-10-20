@@ -1,0 +1,33 @@
+################################################################################
+# Kbuild for Chelsio Partial Offload FCoE linux drivers.                       #
+#                                                                              #
+# Copyright (C) 2015 Chelsio Communications.                                   #
+#                                                                              #
+################################################################################
+
+topdir := $(src)/..
+obj-m := chfcoe.o
+chfcoe-y += libchfcoe_x86_64.o
+chfcoe-$(INIT) += chfcoe_os_init.o
+chfcoe-$(INIT) += services/chfcoe_mem.o services/chfcoe_lock.o services/chfcoe_utils.o
+chfcoe-$(INIT) += services/chfcoe_byteorder.o services/chfcoe_task.o services/chfcoe_skb.o
+chfcoe-$(INIT) += services/chfcoe_workq.o services/chfcoe_file.o services/chfcoe_netdev.o
+
+ccflags-$(INIT) += -I$(topdir)/common
+ccflags-$(INIT) += -I$(src)/services
+ccflags-$(INIT) += -I$(src)/linux
+ccflags-$(INIT) += -I$(KERNEL_INC)
+ccflags-$(INIT) += -I$(CXGB4_SRC_PATH)
+ccflags-$(INIT) += -I$(CSIOSTOR_SRC_PATH)
+ccflags-$(INIT) += -I$(FIRMWARE_PATH)
+
+ccflags-$(TGT) += -I$(SCST_INC)
+ccflags-$(TGT) += -I$(topdir)/target
+ccflags-$(TGT) += -D__CSIO_TARGET__ -DCONFIG_PO_FCOE
+
+chfcoe-$(TGT)	+= ../target/csio_sal_core.o
+chfcoe-$(TGT)	+= ../target/csio_scst_sal.o
+
+#ccflags-$(DBG) += -g -D__CHFCOE_DEBUG__  
+#ccflags-$(DBG) += -D__CHFCOE_DEBUGFS__ -D__CHFCOE_DEBUG_SLAB__
+#chfcoe-$(DBG) += chfcoe_os_dfs.o

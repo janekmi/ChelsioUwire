@@ -1,0 +1,15 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+lib="/usr/lib"
+
+if [ -f  ${lib}/libcxgb4_udp.so ]; then 
+    unlink ${lib}/libcxgb4_udp.so;
+fi
+if [ -f ${lib}/libcxgb4_udp.so.1 ]; then
+    unlink ${lib}/libcxgb4_udp.so.1;
+fi
+
+exit 0

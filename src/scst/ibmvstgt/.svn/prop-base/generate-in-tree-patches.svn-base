@@ -1,0 +1,16 @@
+K 14
+svn:executable
+V 1
+*
+K 13
+svn:mergeinfo
+V 596
+/branches/1.0.1.x/ibmvstgt/generate-in-tree-patches:731
+/branches/ibmvstgt-port/ibmvstgt/generate-in-tree-patches:2370-2513,2552,2559,2566,2585,2677,2680-2681,2723
+/branches/pr/ibmvstgt/generate-in-tree-patches:1584-1713
+/branches/srpt-separate-rx-tx-buffers/ibmvstgt/generate-in-tree-patches:2384-2441
+/branches/srpt-separate-rx-tx-buffers-2/ibmvstgt/generate-in-tree-patches:2381-2383
+/branches/sysfs/ibmvstgt/generate-in-tree-patches:787-1227
+/branches/sysfs-changes/ibmvstgt/generate-in-tree-patches:2896-2897,2901
+/branches/sysfs-tree-changes/ibmvstgt/generate-in-tree-patches:2972,3129,3142
+END

@@ -1,0 +1,4292 @@
+diff -r 30 src/network/Makefile
+--- a/src/network/Makefile	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/Makefile	Thu Apr 21 15:27:13 2016 +0530
+@@ -979,9 +979,19 @@
+ # see if kernel supports port mapping
+ #
+ ifneq ($(wildcard $(RDMA_INC)/iw_portmap.h),)
+-  FLAGS += -DIWARP_IWPM_SUPPORT
++  ifneq ($(shell $(grep) -c 'iwpm_get_remote_info' $(RDMA_INC)/iw_portmap.h),0)
++    FLAGS += -DIWARP_IWPM_SUPPORT
++  endif
+ endif
+ 
++#
++# see if kernel supports Peer-Direct memory
++#
++ifneq ($(wildcard $(RDMA_INC)/ib_umem.h),)
++  ifneq ($(shell $(grep) -c 'invalidation_ctx' $(RDMA_INC)/ib_umem.h),0)
++    FLAGS += -DPEER_DIRECT_MEM_SUPPORT
++  endif
++endif
+ 
+ ifneq ($(wildcard $(RDMA_INC)/ib_umem.h),)
+   ifneq ($(shell $(grep) -c 'ib_umem_chunk' $(RDMA_INC)/ib_umem.h),0)
+diff -r 30 src/network/bonding/BONDING_KDIRS/3.19.0/bond_3ad.c
+--- a/src/network/bonding/BONDING_KDIRS/3.19.0/bond_3ad.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/bonding/BONDING_KDIRS/3.19.0/bond_3ad.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -28,6 +28,7 @@
+ #include <linux/etherdevice.h>
+ #include <linux/if_bonding.h>
+ #include <linux/pkt_sched.h>
++#include <linux/toedev.h>
+ #include <net/net_namespace.h>
+ #include <net/bonding.h>
+ #include <net/bond_3ad.h>
+@@ -201,6 +202,8 @@
+ 
+ 	if ((slave->link == BOND_LINK_UP) && bond_slave_is_up(slave))
+ 		bond_set_slave_active_flags(slave, BOND_SLAVE_NOTIFY_LATER);
++		toe_failover(netdev_master_upper_dev_get_rcu(port->slave->dev),
++			     port->slave->dev, TOE_LINK_UP, NULL);
+ }
+ 
+ /**
+@@ -2339,6 +2342,8 @@
+ 		port->actor_admin_port_key &= ~AD_DUPLEX_KEY_MASKS;
+ 		port->actor_oper_port_key = (port->actor_admin_port_key &=
+ 					     ~AD_SPEED_KEY_MASKS);
++		toe_failover(netdev_master_upper_dev_get(slave->dev),
++			     slave->dev, TOE_LINK_DOWN, NULL);
+ 	}
+ 	netdev_dbg(slave->bond->dev, "Port %d changed link status to %s\n",
+ 		   port->actor_port_number,
+diff -r 30 src/network/bonding/BONDING_KDIRS/3.19.0/bond_main.c
+--- a/src/network/bonding/BONDING_KDIRS/3.19.0/bond_main.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/bonding/BONDING_KDIRS/3.19.0/bond_main.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -76,6 +76,7 @@
+ #include <net/netns/generic.h>
+ #include <net/pkt_sched.h>
+ #include <linux/rculist.h>
++#include <linux/toedev.h>
+ #include <net/flow_keys.h>
+ #include <net/bonding.h>
+ #include <net/bond_3ad.h>
+@@ -881,7 +882,15 @@
+ 
+ 	best_slave = bond_find_best_slave(bond);
+ 	if (best_slave != rtnl_dereference(bond->curr_active_slave)) {
++		struct slave *last_slave = bond->curr_active_slave;
++
+ 		bond_change_active_slave(bond, best_slave);
++		toe_failover(bond->dev,
++			     bond->curr_active_slave ?
++			     bond->curr_active_slave->dev : NULL,
++			     TOE_ACTIVE_SLAVE,
++			     last_slave ? last_slave->dev : NULL);
++
+ 		rv = bond_set_carrier(bond);
+ 		if (!rv)
+ 			return;
+@@ -1675,6 +1684,8 @@
+ 	 */
+ 	netdev_rx_handler_unregister(slave_dev);
+ 
++	toe_failover(bond_dev, slave_dev, TOE_RELEASE, NULL);
++
+ 	if (BOND_MODE(bond) == BOND_MODE_8023AD)
+ 		bond_3ad_unbind_slave(slave);
+ 
+@@ -1714,6 +1725,7 @@
+ 	}
+ 
+ 	if (all) {
++		toe_failover(bond_dev, NULL, TOE_RELEASE_ALL, NULL);
+ 		RCU_INIT_POINTER(bond->curr_active_slave, NULL);
+ 	} else if (oldcurrent == slave) {
+ 		/* Note that we hold RTNL over this sequence, so there
+@@ -1986,6 +1998,11 @@
+ 			if (BOND_MODE(bond) == BOND_MODE_XOR)
+ 				bond_update_slave_arr(bond, NULL);
+ 
++			if (BOND_MODE(bond) == BOND_MODE_XOR ||
++			    BOND_MODE(bond) == BOND_MODE_ROUNDROBIN)
++				toe_failover(netdev_master_upper_dev_get(slave->dev),
++					     slave->dev, TOE_LINK_UP, NULL);
++
+ 			if (!bond->curr_active_slave || slave == primary)
+ 				goto do_failover;
+ 
+@@ -2016,6 +2033,11 @@
+ 			if (BOND_MODE(bond) == BOND_MODE_XOR)
+ 				bond_update_slave_arr(bond, NULL);
+ 
++			if (BOND_MODE(bond) == BOND_MODE_XOR ||
++			    BOND_MODE(bond) == BOND_MODE_ROUNDROBIN)
++				toe_failover(netdev_master_upper_dev_get(slave->dev),
++					     slave->dev, TOE_LINK_DOWN, NULL);
++
+ 			if (slave == rcu_access_pointer(bond->curr_active_slave))
+ 				goto do_failover;
+ 
+@@ -2797,6 +2819,20 @@
+ 	case NETDEV_REGISTER:
+ 		bond_create_proc_entry(event_bond);
+ 		break;
++	case NETDEV_DOWN: {
++		struct slave *slave = bond_first_slave(event_bond);
++
++		toe_failover(bond_dev, slave ? slave->dev : NULL,
++			     TOE_BOND_DOWN, NULL);
++		break;
++	}
++	case NETDEV_UP: {
++		struct slave *slave = bond_first_slave(event_bond);
++
++		toe_failover(bond_dev, slave ? slave->dev : NULL,
++			     TOE_BOND_UP, NULL);
++		break;
++	}
+ 	case NETDEV_NOTIFY_PEERS:
+ 		if (event_bond->send_peer_notif)
+ 			event_bond->send_peer_notif--;
+@@ -3485,6 +3521,36 @@
+ 	return res;
+ }
+ 
++static struct net_device *bond_xmit_slave_id_select(struct bonding *bond, int slave_id)
++{
++	struct list_head *iter;
++	struct slave *slave;
++	struct net_device *slave_dev = NULL;
++	int i = slave_id;
++
++	/* Here we start from the slave with slave_id */
++	bond_for_each_slave_rcu(bond, slave, iter) {
++		if (--i < 0) {
++			if (bond_slave_can_tx(slave)) {
++				slave_dev = slave->dev;
++				return slave_dev;
++			}
++		}
++	}
++
++	/* Here we start from the first slave up to slave_id */
++	i = slave_id;
++	bond_for_each_slave_rcu(bond, slave, iter) {
++		if (--i < 0)
++			break;
++		if (bond_slave_can_tx(slave)) {
++			slave_dev = slave->dev;
++			return slave_dev;
++		}
++	}
++	return slave_dev;
++}
++
+ /**
+  * bond_xmit_slave_id - transmit skb through slave with slave_id
+  * @bond: bonding device that is transmitting
+@@ -3558,6 +3624,14 @@
+ 	return slave_id;
+ }
+ 
++static struct net_device *bond_xmit_roundrobin_select(int slave_id,
++					struct net_device *bond_dev)
++{
++	struct bonding *bond = netdev_priv(bond_dev);
++
++	return bond_xmit_slave_id_select(bond, slave_id);
++}
++
+ static int bond_xmit_roundrobin(struct sk_buff *skb, struct net_device *bond_dev)
+ {
+ 	struct bonding *bond = netdev_priv(bond_dev);
+@@ -3591,6 +3665,19 @@
+ 	return NETDEV_TX_OK;
+ }
+ 
++static struct net_device *bond_xmit_activebackup_select(struct net_device *bond_dev)
++{
++	struct bonding *bond = netdev_priv(bond_dev);
++	struct net_device *slave_dev = NULL;
++	struct slave *slave;
++
++	slave = rcu_dereference(bond->curr_active_slave);
++	if (slave)
++		slave_dev = slave->dev;
++
++	return slave_dev;
++}
++
+ /* In active-backup mode, we know that bond->curr_active_slave is always valid if
+  * the bond has a usable interface.
+  */
+@@ -3730,6 +3817,25 @@
+ 	return ret;
+ }
+ 
++static struct net_device *bond_xmit_xor_select(int slave_id,
++					       struct net_device *bond_dev)
++{
++	struct bonding *bond = netdev_priv(bond_dev);
++	struct bond_up_slave *slaves;
++	struct slave *slave;
++	struct net_device *slave_dev = NULL;
++	unsigned int count;
++
++	slaves = rcu_dereference(bond->slave_arr);
++	count = slaves ? ACCESS_ONCE(slaves->count) : 0;
++	if (likely(count)) {
++		slave = slaves->arr[slave_id];
++		if (slave)
++			slave_dev = slave->dev;
++	}
++	return slave_dev;
++}
++
+ /* Use this Xmit function for 3AD as well as XOR modes. The current
+  * usable slave array is formed in the control path. The xmit function
+  * just calculates hash and sends the packet out.
+@@ -4546,6 +4652,11 @@
+ 	}
+ 
+ 	register_netdevice_notifier(&bond_netdev_notifier);
++
++	register_toe_bond_rr_select_cb(bond_xmit_roundrobin_select);
++	register_toe_bond_acb_select_cb(bond_xmit_activebackup_select);
++	register_toe_bond_8023AD_select_cb(bond_xmit_xor_select);
++	register_toe_bond_xor_select_cb(bond_xmit_xor_select);
+ out:
+ 	return res;
+ err:
+diff -r 30 src/network/bonding/BONDING_KDIRS/3.19.0/bonding.h
+--- a/src/network/bonding/BONDING_KDIRS/3.19.0/bonding.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/bonding/BONDING_KDIRS/3.19.0/bonding.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -30,10 +30,10 @@
+ #include <net/bond_alb.h>
+ #include <net/bond_options.h>
+ 
+-#define DRV_VERSION	"3.7.1"
++#define DRV_VERSION	"3.7.1-chelsio"
+ #define DRV_RELDATE	"April 27, 2011"
+ #define DRV_NAME	"bonding"
+-#define DRV_DESCRIPTION	"Ethernet Channel Bonding Driver"
++#define DRV_DESCRIPTION	"Ethernet Channel Bonding Driver with Offload"
+ 
+ #define bond_version DRV_DESCRIPTION ": v" DRV_VERSION " (" DRV_RELDATE ")\n"
+ 
+diff -r 30 src/network/csiostor/include/common.h
+--- a/src/network/csiostor/include/common.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/csiostor/include/common.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -516,6 +516,30 @@
+ 	return (ticks << adap->params.tp.dack_re) / core_ticks_per_usec(adap);
+ }
+ 
++/**
++ *	hash_mac_addr - return the hash value of a MAC address
++ *	@addr: the 48-bit Ethernet MAC address
++ *
++ *	Hashes a MAC address according to the hash function used by hardware
++ *	inexact (hash) address matching.  The description in the hardware
++ *	documentation for the MPS says this:
++ *
++ *	    The hash function takes the 48 bit MAC address and hashes
++ *	    it down to six bits.  Bit zero of the hash is the XOR of
++ *	    bits 0, 6 ... 42 of the MAC address.  The other hash bits
++ *	    are computed in a similar fashion ending with bit five of
++ *	    the hash as the XOR of bits 5, 11 ... 47 of the MAC address.
++ */
++static inline int hash_mac_addr(const u8 *addr)
++{
++	u32 a = ((u32)addr[0] << 16) | ((u32)addr[1] << 8) | addr[2];
++	u32 b = ((u32)addr[3] << 16) | ((u32)addr[4] << 8) | addr[5];
++	a ^= b;
++	a ^= (a >> 12);
++	a ^= (a >> 6);
++	return a & 0x3f;
++}
++
+ void t4_set_reg_field(struct adapter *adap, unsigned int addr, u32 mask, u32 val);
+ 
+ void t4_record_mbox_marker(struct adapter *adapter,
+@@ -707,31 +731,6 @@
+ 	return t4_memory_rw(adap, MEMWIN_NIC, mtype, addr, len, buf, T4_MEMORY_WRITE);
+ }
+ 
+-/**
+- *	hash_mac_addr - return the hash value of a MAC address
+- *	@addr: the 48-bit Ethernet MAC address
+- *
+- *	Hashes a MAC address according to the hash function used by hardware
+- *	inexact (hash) address matching.  The description in the hardware
+- *	documentation for the MPS says this:
+- *
+- *	    The hash function takes the 48 bit MAC address and hashes
+- *	    it down to six bits.  Bit zero of the hash is the XOR of
+- *	    bits 0, 6 ... 42 of the MAC address.  The other hash bits
+- *	    are computed in a similar fashion ending with bit five of
+- *	    the hash as the XOR of bits 5, 11 ... 47 of the MAC address.
+- */
+-static inline int hash_mac_addr(const u8 *addr)
+-{
+-	u32 a = ((u32)addr[0] << 16) | ((u32)addr[1] << 8) | addr[2];
+-	u32 b = ((u32)addr[3] << 16) | ((u32)addr[4] << 8) | addr[5];
+-
+-	a ^= b;
+-	a ^= (a >> 12);
+-	a ^= (a >> 6);
+-	return a & 0x3f;
+-}
+-
+ extern unsigned int t4_get_regs_len(struct adapter *adapter);
+ extern void t4_get_regs(struct adapter *adap, void *buf, size_t buf_size);
+ 
+diff -r 30 src/network/csiostor/t4_hw.c
+--- a/src/network/csiostor/t4_hw.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/csiostor/t4_hw.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -8293,8 +8293,9 @@
+ 		adapter->params.arch.cng_ch_bits_log = 2;
+ 	} else if (is_t6(adapter->params.chip)) {
+ 		adapter->params.arch.sge_fl_db = 0;
++		/* For T6, we reserve last 2 entries for MATCHALL mac */
+ 		adapter->params.arch.mps_tcam_size =
+-				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
++				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES - 2;
+ 		adapter->params.arch.mps_rplc_size = 256;
+ 		adapter->params.arch.nchan = 2;
+ 		adapter->params.arch.pm_stats_cnt = T6_PM_NSTATS;
+@@ -8872,7 +8873,6 @@
+ 		p->lport = j;
+ 		p->rss_size = rss_size;
+ 		t4_os_set_hw_addr(adap, i, addr);
+-		adap->port[i]->dev_port = j;
+ 
+ 		ret = be32_to_cpu(c.u.info.lstatus_to_modtype);
+ 		p->mdio_addr = (ret & F_FW_PORT_CMD_MDIOCAP) ?
+diff -r 30 src/network/csiostor/t4_linux_debugfs.c
+--- a/src/network/csiostor/t4_linux_debugfs.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/csiostor/t4_linux_debugfs.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -2692,12 +2692,20 @@
+ 	.release = single_release,
+ };
+ 
++static void set_debugfs_file_size(struct dentry *de, loff_t size)
++{
++	if (!IS_ERR(de) && de->d_inode)
++		de->d_inode->i_size = size;
++}
++
+ static void add_debugfs_mem(struct adapter *adap, const char *name,
+ 				      unsigned int idx, unsigned int size_mb)
+ {
+-	debugfs_create_file_size(name, S_IRUSR, adap->debugfs_root,
+-				 (void *)adap + idx, &mem_debugfs_fops,
+-				 size_mb << 20);
++	struct dentry *de;
++
++	de = debugfs_create_file(name, S_IRUSR, adap->debugfs_root,
++				 (void *)adap + idx, &mem_debugfs_fops);
++	set_debugfs_file_size(de, size_mb << 20);
+ }
+ 
+ /*
+@@ -2822,8 +2830,9 @@
+ 					A_MA_EXT_MEMORY_BAR)));
+ 	}
+ 
+-	de = debugfs_create_file_size("flash", S_IRUSR, adap->debugfs_root, adap,
+-				 &flash_debugfs_fops, adap->params.sf_size);
++	de = debugfs_create_file("flash", S_IRUSR, adap->debugfs_root, adap,
++				 &flash_debugfs_fops);
++	set_debugfs_file_size(de, adap->params.sf_size);
+ 	debugfs_create_bool("use_backdoor", S_IWUSR | S_IRUSR,
+ 			    adap->debugfs_root, &adap->use_bd);
+ 
+@@ -2834,8 +2843,9 @@
+ 	if (adap->dma_virt) {
+ 		printk("DMA buffer at bus address %#llx, virtual 0x%p\n",
+ 			(unsigned long long)adap->dma_phys, adap->dma_virt);
+-		de = debugfs_create_file_size("dmabuf", 0644, adap->debugfs_root,
+-					 adap, &dma_debugfs_fops, DMABUF_SZ);
++		de = debugfs_create_file("dmabuf", 0644, adap->debugfs_root,
++					 adap, &dma_debugfs_fops);
++		set_debugfs_file_size(de, DMABUF_SZ);
+ 	}
+ #endif
+ 
+diff -r 30 src/network/cxgb4/adapter.h
+--- a/src/network/cxgb4/adapter.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/adapter.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -722,6 +722,8 @@
+ 	unsigned int rawf_cnt;
+ 	struct smt_data *smt;
+ 	struct srq_data *srq;
++	u8 mac_addr[512][ETH_ALEN];
++	unsigned int mac_count;
+ 	struct list_head mac_hlist; /* list of MAC addresses in MPS Hash */
+ 
+ 	void *uld_handle[CXGB4_ULD_MAX];
+@@ -1027,6 +1029,7 @@
+ 				     u8 hw_addr[])
+ {
+ 	memcpy(adapter->port[port_idx]->dev_addr, hw_addr, ETH_ALEN);
++	memcpy(adapter->port[port_idx]->perm_addr, hw_addr, ETH_ALEN);
+ }
+ 
+ /**
+diff -r 30 src/network/cxgb4/common.h
+--- a/src/network/cxgb4/common.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/common.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -516,6 +516,30 @@
+ 	return (ticks << adap->params.tp.dack_re) / core_ticks_per_usec(adap);
+ }
+ 
++/**
++ *	hash_mac_addr - return the hash value of a MAC address
++ *	@addr: the 48-bit Ethernet MAC address
++ *
++ *	Hashes a MAC address according to the hash function used by hardware
++ *	inexact (hash) address matching.  The description in the hardware
++ *	documentation for the MPS says this:
++ *
++ *	    The hash function takes the 48 bit MAC address and hashes
++ *	    it down to six bits.  Bit zero of the hash is the XOR of
++ *	    bits 0, 6 ... 42 of the MAC address.  The other hash bits
++ *	    are computed in a similar fashion ending with bit five of
++ *	    the hash as the XOR of bits 5, 11 ... 47 of the MAC address.
++ */
++static inline int hash_mac_addr(const u8 *addr)
++{
++	u32 a = ((u32)addr[0] << 16) | ((u32)addr[1] << 8) | addr[2];
++	u32 b = ((u32)addr[3] << 16) | ((u32)addr[4] << 8) | addr[5];
++	a ^= b;
++	a ^= (a >> 12);
++	a ^= (a >> 6);
++	return a & 0x3f;
++}
++
+ void t4_set_reg_field(struct adapter *adap, unsigned int addr, u32 mask, u32 val);
+ 
+ void t4_record_mbox_marker(struct adapter *adapter,
+@@ -707,31 +731,6 @@
+ 	return t4_memory_rw(adap, MEMWIN_NIC, mtype, addr, len, buf, T4_MEMORY_WRITE);
+ }
+ 
+-/**
+- *	hash_mac_addr - return the hash value of a MAC address
+- *	@addr: the 48-bit Ethernet MAC address
+- *
+- *	Hashes a MAC address according to the hash function used by hardware
+- *	inexact (hash) address matching.  The description in the hardware
+- *	documentation for the MPS says this:
+- *
+- *	    The hash function takes the 48 bit MAC address and hashes
+- *	    it down to six bits.  Bit zero of the hash is the XOR of
+- *	    bits 0, 6 ... 42 of the MAC address.  The other hash bits
+- *	    are computed in a similar fashion ending with bit five of
+- *	    the hash as the XOR of bits 5, 11 ... 47 of the MAC address.
+- */
+-static inline int hash_mac_addr(const u8 *addr)
+-{
+-	u32 a = ((u32)addr[0] << 16) | ((u32)addr[1] << 8) | addr[2];
+-	u32 b = ((u32)addr[3] << 16) | ((u32)addr[4] << 8) | addr[5];
+-
+-	a ^= b;
+-	a ^= (a >> 12);
+-	a ^= (a >> 6);
+-	return a & 0x3f;
+-}
+-
+ extern unsigned int t4_get_regs_len(struct adapter *adapter);
+ extern void t4_get_regs(struct adapter *adap, void *buf, size_t buf_size);
+ 
+diff -r 30 src/network/cxgb4/cxgb4_compat.h
+--- a/src/network/cxgb4/cxgb4_compat.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/cxgb4_compat.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -672,4 +672,46 @@
+ #ifndef dma_rmb
+ #define dma_rmb()	rmb()
+ #endif
++
++#if IS_ENABLED(CONFIG_VXLAN) && (LINUX_VERSION_CODE < KERNEL_VERSION(3,18,0))
++ /* VXLAN protocol header */
++struct vxlanhdr {
++	__be32 vx_flags;
++	__be32 vx_vni;
++};
++#endif
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37) && !defined(RHEL_RELEASE_6_5)
++static inline int is_unicast_ether_addr(const u8 *addr)
++{
++	return !is_multicast_ether_addr(addr);
++}
++#endif
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0) && !defined(RHEL_RELEASE_7_1) \
++    && !defined(RHEL_RELEASE_6_7) && !defined(SLES_RELEASE_11_4)
++static inline void ether_addr_copy(u8 *dst, const u8 *src)
++{
++#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
++	*(u32 *)dst = *(const u32 *)src;
++	*(u16 *)(dst + 4) = *(const u16 *)(src + 4);
++#else
++	u16 *a = (u16 *)dst;
++	const u16 *b = (const u16 *)src;
++
++	a[0] = b[0];
++	a[1] = b[1];
++	a[2] = b[2];
++#endif
++}
++#endif
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0) \
++    && !defined(RHEL_RELEASE_6_4) && !defined(SLES_RELEASE_11_4)
++static inline bool ether_addr_equal(const u8 *addr1, const u8 *addr2)
++{
++	return !compare_ether_addr(addr1, addr2);
++}
++#endif
++
+ #endif  /* !__CXGB4_COMPAT_H */
+diff -r 30 src/network/cxgb4/cxgb4_dcb.c
+--- a/src/network/cxgb4/cxgb4_dcb.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/cxgb4_dcb.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -12,18 +12,19 @@
+ #include "cxgb4_dcb.h"
+ #include "t4fw_interface.h"
+ 
+-/* DCBx version control
++/*
++ * DCBx version control 
+  */
+-const char * const dcb_ver_array[] = {
+-	"Unknown",
+-	"DCBx-CIN",
+-	"DCBx-CEE 1.01",
+-	"DCBx-IEEE",
+-	"", "", "",
+-	"Auto Negotiated"
++char *dcb_ver_array[] = {
++        "Unknown",
++        "DCBx-CIN",
++        "DCBx-CEE 1.01",
++        "DCBx-IEEE",
++        "", "", "",
++        "Auto Negotiated"
+ };
+ 
+-static inline bool cxgb4_dcb_state_synced(enum cxgb4_dcb_state state)
++static bool cxgb4_dcb_state_synced(enum cxgb4_dcb_state state)
+ {
+ 	if (state == CXGB4_DCB_STATE_FW_ALLSYNCED ||
+ 	    state == CXGB4_DCB_STATE_HOST)
+@@ -32,7 +33,8 @@
+ 		return false;
+ }
+ 
+-/* Initialize a port's Data Center Bridging state.  Typically used after a
++/*
++ * Initialize a port's Data Center Bridging state.  Typically used after a
+  * Link Down event.
+  */
+ void cxgb4_dcb_state_init(struct net_device *dev)
+@@ -43,24 +45,14 @@
+ 
+ 	memset(dcb, 0, sizeof(struct port_dcb_info));
+ 	dcb->state = CXGB4_DCB_STATE_START;
+-	if (version_temp)
++	if(version_temp)
+ 		dcb->dcb_version = version_temp;
+ 
+-	netdev_dbg(dev, "%s: Initializing DCB state for port[%d]\n",
+-		    __func__, pi->port_id);
++	CH_MSG(pi->adapter, INFO, HW, "%s: Initializing DCB state for port[%d]\n",
++	       __func__, pi->port_id);
+ }
+ 
+-void cxgb4_dcb_version_init(struct net_device *dev)
+-{
+-	struct port_info *pi = netdev2pinfo(dev);
+-	struct port_dcb_info *dcb = &pi->dcb;
+-
+-	/* Any writes here are only done on kernels that exlicitly need
+-	 * a specific version, say < 2.6.38 which only support CEE
+-	 */
+-	dcb->dcb_version = FW_PORT_DCB_VER_AUTO;
+-}
+-
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ static void cxgb4_dcb_cleanup_apps(struct net_device *dev)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -89,16 +81,44 @@
+ 		}
+ 
+ 		if (err) {
+-			dev_err(adap->pdev_dev,
+-				"Failed DCB Clear %s Application Priority: sel=%d, prot=%d, , err=%d\n",
+-				dcb_ver_array[dcb->dcb_version], app.selector,
+-				app.protocol, -err);
++			CH_ERR(adap, "Failed DCB Clear %s Application Priority: "
++			       "sel=%d, prot=%d, , err=%d\n",
++			       dcb_ver_array[dcb->dcb_version], app.selector, app.protocol, -err);
+ 			break;
+ 		}
+ 	}
++
++}
++#endif
++
++void cxgb4_dcb_version_init(struct net_device *dev) 
++{
++	struct port_info *pi = netdev2pinfo(dev);
++	struct port_dcb_info *dcb = &pi->dcb;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
++	struct adapter *adap = pi->adapter;
++	struct fw_port_cmd pcmd;
++	int err;
++
++	dcb->dcb_version = FW_PORT_DCB_VER_CEE1D01;
++	INIT_PORT_DCB_WRITE_CMD(pcmd, pi->port_id);
++	pcmd.u.dcb.control.type = FW_PORT_DCB_TYPE_CONTROL;
++	pcmd.u.dcb.control.dcb_version_to_app_state = cpu_to_be16(V_FW_PORT_CMD_DCB_VERSION(dcb->dcb_version));
++
++	 err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
++	if (err != FW_PORT_DCB_CFG_SUCCESS) {
++		CH_WARN(adap,
++			"DCB version set failed with %d, firmware does not seem to support it. Assuming %s\n",
++			-err, dcb_ver_array[FW_PORT_DCB_VER_CEE1D01]);
++		dcb->dcb_version = FW_PORT_DCB_VER_UNKNOWN;
++	}
++#else
++	dcb->dcb_version = FW_PORT_DCB_VER_AUTO;
++#endif
+ }
+ 
+-/* Finite State machine for Data Center Bridging.
++/*
++ * Finite State machine for Data Center Bridging.
+  */
+ void cxgb4_dcb_state_fsm(struct net_device *dev,
+ 			 enum cxgb4_dcb_state_input transition_to)
+@@ -108,8 +128,8 @@
+ 	struct adapter *adap = pi->adapter;
+ 	enum cxgb4_dcb_state current_state = dcb->state;
+ 
+-	netdev_dbg(dev, "%s: State change from %d to %d for %s\n",
+-		    __func__, dcb->state, transition_to, dev->name);
++	CH_MSG(adap, INFO, HW, "%s: State change from %d to %d for %s\n",
++	       __func__, dcb->state, transition_to, dev->name);
+ 
+ 	switch (current_state) {
+ 	case CXGB4_DCB_STATE_START: {
+@@ -124,11 +144,15 @@
+ 		case CXGB4_DCB_INPUT_FW_ENABLED: {
+ 			/* we're going to use Firmware DCB */
+ 			dcb->state = CXGB4_DCB_STATE_FW_INCOMPLETE;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ 			dcb->supported = DCB_CAP_DCBX_LLD_MANAGED;
+ 			if (dcb->dcb_version == FW_PORT_DCB_VER_IEEE)
+ 				dcb->supported |= DCB_CAP_DCBX_VER_IEEE;
+ 			else
+ 				dcb->supported |= DCB_CAP_DCBX_VER_CEE;
++#else
++			dcb->supported = CXGB4_DCBX_FW_SUPPORT;
++#endif
+ 			break;
+ 		}
+ 
+@@ -181,17 +205,19 @@
+ 		}
+ 
+ 		case CXGB4_DCB_INPUT_FW_INCOMPLETE: {
+-			/* We were successfully running with firmware DCB but
++ 			/* We were successfully running with firmware DCB but
+ 			 * now it's telling us that it's in an "incomplete
+ 			 * state.  We need to reset back to a ground state
+ 			 * of incomplete.
+ 			 */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ 			cxgb4_dcb_cleanup_apps(dev);
+-			cxgb4_dcb_state_init(dev);
+-			dcb->state = CXGB4_DCB_STATE_FW_INCOMPLETE;
+-			dcb->supported = CXGB4_DCBX_FW_SUPPORT;
+-			linkwatch_fire_event(dev);
+-			break;
++#endif
++                        cxgb4_dcb_state_init(dev);
++                        dcb->state = CXGB4_DCB_STATE_FW_INCOMPLETE;
++                        dcb->supported = CXGB4_DCBX_FW_SUPPORT;
++                        linkwatch_fire_event(dev);
++                        break;
+ 		}
+ 
+ 		case CXGB4_DCB_INPUT_FW_ALLSYNCED: {
+@@ -229,16 +255,17 @@
+ 	return;
+ 
+ bad_state_input:
+-	dev_err(adap->pdev_dev, "cxgb4_dcb_state_fsm: illegal input symbol %d\n",
+-		transition_to);
++	CH_ERR(adap, "cxgb4_dcb_state_fsm: illegal input symbol %d\n",
++	       transition_to);
+ 	return;
+ 
+ bad_state_transition:
+-	dev_err(adap->pdev_dev, "cxgb4_dcb_state_fsm: bad state transition, state = %d, input = %d\n",
+-		current_state, transition_to);
++	CH_ERR(adap, "cxgb4_dcb_state_fsm: bad state transition, state = %d, input = %d\n",
++	       current_state, transition_to);
+ }
+ 
+-/* Handle a DCB/DCBX update message from the firmware.
++/*
++ * Handle a DCB/DCBX update message from the firmware.
+  */
+ void cxgb4_dcb_handle_fw_update(struct adapter *adap,
+ 				const struct fw_port_cmd *pcmd)
+@@ -251,7 +278,11 @@
+ 	int dcb_type = pcmd->u.dcb.pgid.type;
+ 	int dcb_running_version;
+ 
+-	/* Handle Firmware DCB Control messages separately since they drive
++	CH_MSG(adap, INFO, HW,
++	       "%s: Received message type %d in state %d for %s\n", __func__,
++	       dcb_type, dcb->state, dev->name);
++	/*
++	 * Handle Firmware DCB Control messages separately since they drive
+ 	 * our state machine.
+ 	 */
+ 	if (dcb_type == FW_PORT_DCB_TYPE_CONTROL) {
+@@ -262,20 +293,23 @@
+ 			 : CXGB4_DCB_STATE_FW_INCOMPLETE);
+ 
+ 		if (dcb->dcb_version != FW_PORT_DCB_VER_UNKNOWN) {
+-			dcb_running_version = G_FW_PORT_CMD_DCB_VERSION(
+-				be16_to_cpu(
++			dcb_running_version = G_FW_PORT_CMD_DCB_VERSION(be16_to_cpu(
+ 				pcmd->u.dcb.control.dcb_version_to_app_state));
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
++			if (dcb_running_version == FW_PORT_DCB_VER_CEE1D01) {
++#else
+ 			if (dcb_running_version == FW_PORT_DCB_VER_CEE1D01 ||
+ 			    dcb_running_version == FW_PORT_DCB_VER_IEEE) {
++#endif
+ 				dcb->dcb_version = dcb_running_version;
+-				dev_warn(adap->pdev_dev, "Interface %s is running %s\n",
+-					 dev->name,
+-					 dcb_ver_array[dcb->dcb_version]);
++				CH_WARN(adap, "Interface %s is running %s \n",
++				       dev->name,
++				       dcb_ver_array[dcb->dcb_version]);
+ 			} else {
+-				dev_warn(adap->pdev_dev,
+-					 "Something screwed up, requested firmware for %s, but firmware returned %s instead\n",
+-					 dcb_ver_array[dcb->dcb_version],
+-					 dcb_ver_array[dcb_running_version]);
++				CH_WARN(adap,
++					"Something screwed up, requested firmware for %s, but firmware returned %s instead\n",
++				        dcb_ver_array[dcb->dcb_version],
++					dcb_ver_array[dcb_running_version]);
+ 				dcb->dcb_version = FW_PORT_DCB_VER_UNKNOWN;
+ 			}
+ 		}
+@@ -284,19 +318,21 @@
+ 		return;
+ 	}
+ 
+-	/* It's weird, and almost certainly an error, to get Firmware DCB
++	/*
++	 * It's weird, and almost certainly an error, to get Firmware DCB
+ 	 * messages when we either haven't been told whether we're going to be
+ 	 * doing Host or Firmware DCB; and even worse when we've been told
+ 	 * that we're doing Host DCB!
+ 	 */
+ 	if (dcb->state == CXGB4_DCB_STATE_START ||
+ 	    dcb->state == CXGB4_DCB_STATE_HOST) {
+-		dev_err(adap->pdev_dev, "Receiving Firmware DCB messages in State %d\n",
+-			dcb->state);
++		CH_ERR(adap, "Receiving Firmware DCB messages in State %d\n",
++		       dcb->state);
+ 		return;
+ 	}
+ 
+-	/* Now handle the general Firmware DCB update messages ...
++	/*
++	 * Now handle the general Firmware DCB update messages ...
+ 	 */
+ 	switch (dcb_type) {
+ 	case FW_PORT_DCB_TYPE_PGID:
+@@ -333,12 +369,13 @@
+ 		int idx = fwap->idx;
+ 		struct app_priority *ap = &dcb->app_priority[idx];
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ 		struct dcb_app app = {
+ 			.protocol = be16_to_cpu(fwap->protocolid),
+ 		};
+ 		int err;
+ 
+-		/* Convert from firmware format to relevant format
++		/* Convert from firmware format to relevant format 
+ 		 * when using app selector
+ 		 */
+ 		if (dcb->dcb_version == FW_PORT_DCB_VER_IEEE) {
+@@ -354,9 +391,10 @@
+ 		}
+ 
+ 		if (err)
+-			dev_err(adap->pdev_dev,
+-				"Failed DCB Set Application Priority: sel=%d, prot=%d, prio=%d, err=%d\n",
+-				app.selector, app.protocol, app.priority, -err);
++			CH_ERR(adap, "Failed DCB Set Application Priority: "
++			       "sel=%d, prot=%d, prio=%d, err=%d\n",
++			       app.selector, app.protocol, app.priority, -err);
++#endif /* LINUX_VERSION_CODE >= 2.6.38 */
+ 
+ 		ap->user_prio_map = fwap->user_prio_map;
+ 		ap->sel_field = fwap->sel_field;
+@@ -366,17 +404,18 @@
+ 	}
+ 
+ 	default:
+-		dev_err(adap->pdev_dev, "Unknown DCB update type received %x\n",
+-			dcb_type);
++		CH_ERR(adap, "Unknown DCB update type received %x\n", dcb_type);
+ 		break;
+ 	}
+ }
+ 
+-/* Data Center Bridging netlink operations.
++/*
++ * Data Center Bridging netlink operations.
+  */
+ 
+ 
+-/* Get current DCB enabled/disabled state.
++/*
++ * Get current DCB enabled/disabled state.
+  */
+ static u8 cxgb4_getstate(struct net_device *dev)
+ {
+@@ -385,20 +424,23 @@
+ 	return pi->dcb.enabled;
+ }
+ 
+-/* Set DCB enabled/disabled.
++/*
++ * Set DCB enabled/disabled.
+  */
+ static u8 cxgb4_setstate(struct net_device *dev, u8 enabled)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 
+ 	/* If DCBx is host-managed, dcb is enabled by outside lldp agents */
+-	if (pi->dcb.state == CXGB4_DCB_STATE_HOST) {
++	if(pi->dcb.state == CXGB4_DCB_STATE_HOST) {
+ 		pi->dcb.enabled = enabled;
+ 		return 0;
+ 	}
+ 
+-	/* Firmware doesn't provide any mechanism to control the DCB state.
++	/*
++	 * Firmware doesn't provide any mechanism to control the DCB state.
+ 	 */
++
+ 	if (enabled != (pi->dcb.state == CXGB4_DCB_STATE_FW_ALLSYNCED))
+ 		return 1;
+ 
+@@ -406,8 +448,8 @@
+ }
+ 
+ static void cxgb4_getpgtccfg(struct net_device *dev, int tc,
+-			     u8 *prio_type, u8 *pgid, u8 *bw_per,
+-			     u8 *up_tc_map, int local)
++					 u8 *prio_type, u8 *pgid, u8 *bw_per,
++					 u8 *up_tc_map, int local)
+ {
+ 	struct fw_port_cmd pcmd;
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -424,7 +466,7 @@
+ 	pcmd.u.dcb.pgid.type = FW_PORT_DCB_TYPE_PGID;
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGID failed with %d\n", -err);
++		CH_ERR(adap, "DCB read PGID failed with %d\n", -err);
+ 		return;
+ 	}
+ 	*pgid = (be32_to_cpu(pcmd.u.dcb.pgid.pgid) >> (tc * 4)) & 0xf;
+@@ -436,15 +478,18 @@
+ 	pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB read PGRATE failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+ 	*bw_per = pcmd.u.dcb.pgrate.pgrate[*pgid];
+ 	*up_tc_map = (1 << tc);
+ 
+-	/* prio_type is link strict */
++/* @DCB_TC_ATTR_PARAM_STRICT_PRIO: (NLA_U8) Strict priority setting
++ *                                 0 - none
++ *                                 1 - group strict
++ *                                 2 - link strict 
++ */
+ 	if (*pgid != 0xF)
+ 		*prio_type = 0x2;
+ }
+@@ -454,8 +499,7 @@
+ 				u8 *up_tc_map)
+ {
+ 	/* tc 0 is written at MSB position */
+-	return cxgb4_getpgtccfg(dev, (7 - tc), prio_type, pgid, bw_per,
+-				up_tc_map, 1);
++	return cxgb4_getpgtccfg(dev, (7 - tc), prio_type, pgid, bw_per, up_tc_map, 1);
+ }
+ 
+ 
+@@ -464,8 +508,7 @@
+ 				u8 *up_tc_map)
+ {
+ 	/* tc 0 is written at MSB position */
+-	return cxgb4_getpgtccfg(dev, (7 - tc), prio_type, pgid, bw_per,
+-				up_tc_map, 0);
++	return cxgb4_getpgtccfg(dev, (7 - tc), prio_type, pgid, bw_per, up_tc_map, 0);
+ }
+ 
+ static void cxgb4_setpgtccfg_tx(struct net_device *dev, int tc,
+@@ -479,9 +522,7 @@
+ 	u32 _pgid;
+ 	int err;
+ 
+-	if (pgid == DCB_ATTR_VALUE_UNDEFINED)
+-		return;
+-	if (bw_per == DCB_ATTR_VALUE_UNDEFINED)
++	if (pgid == DCB_ATTR_VALUE_UNDEFINED || bw_per == DCB_ATTR_VALUE_UNDEFINED)
+ 		return;
+ 
+ 	INIT_PORT_DCB_READ_LOCAL_CMD(pcmd, pi->port_id);
+@@ -489,7 +530,7 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGID failed with %d\n", -err);
++		CH_ERR(adap, "DCB read PGID failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+@@ -502,8 +543,7 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB write PGID failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB write PGID failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+@@ -514,8 +554,7 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB read PGRATE failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+@@ -527,12 +566,12 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS)
+-		dev_err(adap->pdev_dev, "DCB write PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB write PGRATE failed with %d\n", -err);
++
+ }
+ 
+-static void cxgb4_getpgbwgcfg(struct net_device *dev, int pgid, u8 *bw_per,
+-			      int local)
++static void cxgb4_getpgbwgcfg(struct net_device *dev, int pgid,
++					  u8 *bw_per, int local)
+ {
+ 	struct fw_port_cmd pcmd;
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -547,20 +586,21 @@
+ 	pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB read PGRATE failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+ 	*bw_per = pcmd.u.dcb.pgrate.pgrate[pgid];
+ }
+ 
+-static void cxgb4_getpgbwgcfg_tx(struct net_device *dev, int pgid, u8 *bw_per)
++static void cxgb4_getpgbwgcfg_tx(struct net_device *dev, int pgid,
++				 u8 *bw_per)
+ {
+ 	return cxgb4_getpgbwgcfg(dev, pgid, bw_per, 1);
+ }
+ 
+-static void cxgb4_getpgbwgcfg_rx(struct net_device *dev, int pgid, u8 *bw_per)
++static void cxgb4_getpgbwgcfg_rx(struct net_device *dev, int pgid,
++				 u8 *bw_per)
+ {
+ 	return cxgb4_getpgbwgcfg(dev, pgid, bw_per, 0);
+ }
+@@ -578,8 +618,7 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB read PGRATE failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+@@ -592,11 +631,11 @@
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS)
+-		dev_err(adap->pdev_dev, "DCB write PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB write PGRATE failed with %d\n", -err);
+ }
+ 
+-/* Return whether the specified Traffic Class Priority has Priority Pause
++/*
++ * Return whether the specified Traffic Class Priority has Priority Pause
+  * Frames enabled.
+  */
+ static void cxgb4_getpfccfg(struct net_device *dev, int priority, u8 *pfccfg)
+@@ -611,7 +650,8 @@
+ 		*pfccfg = (pi->dcb.pfcen >> (7 - priority)) & 1;
+ }
+ 
+-/* Enable/disable Priority Pause Frames for the specified Traffic Class
++/*
++ * Enable/disable Priority Pause Frames for the specified Traffic Class
+  * Priority.
+  */
+ static void cxgb4_setpfccfg(struct net_device *dev, int priority, u8 pfccfg)
+@@ -639,7 +679,7 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB PFC write failed with %d\n", -err);
++		CH_ERR(adap, "DCB PFC write failed with %d\n", -err);
+ 		return;
+ 	}
+ 
+@@ -651,11 +691,14 @@
+ 	return 0;
+ }
+ 
+-/* Return DCB capabilities.
++/*
++ * Return DCB capabilities.
+  */
+ static u8 cxgb4_getcap(struct net_device *dev, int cap_id, u8 *caps)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ 	struct port_info *pi = netdev2pinfo(dev);
++#endif
+ 
+ 	switch (cap_id) {
+ 	case DCB_CAP_ATTR_PG:
+@@ -682,9 +725,11 @@
+ 		*caps = false;
+ 		break;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ 	case DCB_CAP_ATTR_DCBX:
+ 		*caps = pi->dcb.supported;
+ 		break;
++#endif
+ 
+ 	default:
+ 		*caps = false;
+@@ -693,9 +738,14 @@
+ 	return 0;
+ }
+ 
+-/* Return the number of Traffic Classes for the indicated Traffic Class ID.
++/*
++ * Return the number of Traffic Classes for the indicated Traffic Class ID.
+  */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+ static int cxgb4_getnumtcs(struct net_device *dev, int tcs_id, u8 *num)
++#else
++static u8 cxgb4_getnumtcs(struct net_device *dev, int tcs_id, u8 *num)
++#endif
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 
+@@ -718,17 +768,25 @@
+ 	return 0;
+ }
+ 
+-/* Set the number of Traffic Classes supported for the indicated Traffic Class
++/*
++ * Set the number of Traffic Classes supported for the indicated Traffic Class
+  * ID.
+  */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
+ static int cxgb4_setnumtcs(struct net_device *dev, int tcs_id, u8 num)
++#else
++static u8 cxgb4_setnumtcs(struct net_device *dev, int tcs_id, u8 num)
++#endif
+ {
+-	/* Setting the number of Traffic Classes isn't supported.
++	/*
++	 * Setting the number of Traffic Classes isn't supported.
+ 	 */
+ 	return -ENOSYS;
+ }
+ 
+-/* Return whether Priority Flow Control is enabled.  */
++/*
++ * Return whether Priority Flow Control is enabled.
++ */
+ static u8 cxgb4_getpfcstate(struct net_device *dev)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -739,19 +797,24 @@
+ 	return pi->dcb.pfcen != 0;
+ }
+ 
+-/* Enable/disable Priority Flow Control. */
++/*
++ * Enable/disable Priority Flow Control.
++ */
+ static void cxgb4_setpfcstate(struct net_device *dev, u8 state)
+ {
+-	/* We can't enable/disable Priority Flow Control but we also can't
++	/*
++	 * We can't enable/disable Priority Flow Control but we also can't
+ 	 * return an error ...
+ 	 */
++	return;
+ }
+ 
+-/* Return the Application User Priority Map associated with the specified
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32)
++/*
++ * Return the Application User Priority Map associated with the specified
+  * Application ID.
+  */
+-static int __cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id,
+-			  int peer)
++static int __cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id, int peer)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 	struct adapter *adap = pi->adapter;
+@@ -764,6 +827,13 @@
+ 		struct fw_port_cmd pcmd;
+ 		int err;
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
++		if (peer == 2)
++			/* Kernels below 2.6.38 have no dcb_getapp, so we need to overload
++			 * this function to do the needful */
++			INIT_PORT_DCB_READ_SYNC_CMD(pcmd, pi->port_id);
++		else
++#endif
+ 		if (peer)
+ 			INIT_PORT_DCB_READ_PEER_CMD(pcmd, pi->port_id);
+ 		else
+@@ -774,8 +844,7 @@
+ 
+ 		err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 		if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-			dev_err(adap->pdev_dev, "DCB APP read failed with %d\n",
+-				-err);
++			CH_ERR(adap, "DCB APP read failed with %d\n", -err);
+ 			return err;
+ 		}
+ 		if (be16_to_cpu(pcmd.u.dcb.app_priority.protocolid) == app_id)
+@@ -790,20 +859,52 @@
+ 	return -EEXIST;
+ }
+ 
+-/* Return the Application User Priority Map associated with the specified
+- * Application ID.
+- */
+-static int cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38)
++/* Kernels below 2.6.38 have no dcb_getapp */
++int cxgb4_getapp_external(struct net_device *dev, u8 app_idtype, u16 app_id)
+ {
+ 	/* Convert app_idtype to firmware format before querying */
+-	return __cxgb4_getapp(dev, app_idtype == DCB_APP_IDTYPE_ETHTYPE ?
+-			      app_idtype : 3, app_id, 0);
++	int result = __cxgb4_getapp(dev, app_idtype == DCB_APP_IDTYPE_ETHTYPE ?
++	                            app_idtype : 3, app_id, 2);
++
++	if (result < 0)
++		result = 0;
++
++	return result;
++}
++EXPORT_SYMBOL(cxgb4_getapp_external);
++#endif
++
++/*
++ * Return the Application User Priority Map associated with the specified
++ * Application ID.  Since this routine is prototyped to return "u8" we can't
++ * return errors ... (this is fixed upstream)
++ * Priority for CEE dcb_app is a bitmask, with 0 being an invalid value
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0)
++static int cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id)
++#else
++static u8 cxgb4_getapp(struct net_device *dev, u8 app_idtype, u16 app_id)
++#endif
++{
++	/* Convert app_idtype to firmware format before querying */
++	int result = __cxgb4_getapp(dev, app_idtype == DCB_APP_IDTYPE_ETHTYPE ?
++				    app_idtype : 3, app_id, 0);
++
++	if (result < 0)
++		result = 0;
++
++	return result;
+ }
+ 
+-/* Write a new Application User Priority Map for the specified Application ID
++/*
++ * Write a new Application User Priority Map for the specified Application ID.
++ * This routine is prototyped to return "u8" but other instantiations of the
++ * DCB NetLink Operations "setapp" routines return negative errnos for errors.
++ * We follow their lead.
+  */
+ static int __cxgb4_setapp(struct net_device *dev, u8 app_idtype, u16 app_id,
+-			  u8 app_prio)
++		       u8 app_prio)
+ {
+ 	struct fw_port_cmd pcmd;
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -825,8 +926,8 @@
+ 		err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 
+ 		if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-			dev_err(adap->pdev_dev, "DCB app table read failed with %d\n",
+-				-err);
++			CH_ERR(adap, "DCB app table read failed with %d\n",
++			       -err);
+ 			return err;
+ 		}
+ 		if (be16_to_cpu(pcmd.u.dcb.app_priority.protocolid) == app_id) {
+@@ -841,7 +942,7 @@
+ 
+ 	if (i == CXGB4_MAX_DCBX_APP_SUPPORTED) {
+ 		/* no empty slots available */
+-		dev_err(adap->pdev_dev, "DCB app table full\n");
++		CH_ERR(adap, "DCB app table full\n");
+ 		return -EBUSY;
+ 	}
+ 
+@@ -858,24 +959,31 @@
+ 
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB app table write failed with %d\n",
+-			-err);
+-		return err;
++			CH_ERR(adap, "DCB app table write failed with %d\n",
++			       -err);
++			return err;
+ 	}
+ 
+ 	return 0;
+ }
+ 
+ /* Priority for CEE inside dcb_app is bitmask, with 0 being an invalid value */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,17,0)
+ static int cxgb4_setapp(struct net_device *dev, u8 app_idtype, u16 app_id,
+ 			u8 app_prio)
++#else
++static u8 cxgb4_setapp(struct net_device *dev, u8 app_idtype, u16 app_id,
++		       u8 app_prio)
++#endif
+ {
+ 	int ret;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
+ 	struct dcb_app app = {
+ 		.selector = app_idtype,
+ 		.protocol = app_id,
+ 		.priority = app_prio,
+ 	};
++#endif
+ 
+ 	if (app_idtype != DCB_APP_IDTYPE_ETHTYPE &&
+ 	    app_idtype != DCB_APP_IDTYPE_PORTNUM)
+@@ -886,15 +994,20 @@
+ 			      app_idtype : 3, app_id, app_prio);
+ 	if (ret)
+ 		return ret;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
++	else
++		return dcb_setapp(dev, &app);
++#else
++	return 0;
++#endif
++}
++#endif /* LINUX_VERSION_CODE >= 2.6.32 */
+ 
+-	return dcb_setapp(dev, &app);
+-}
+-
+-/* Return whether IEEE Data Center Bridging has been negotiated.
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
++/*
++ * Return whether IEEE Data Center Bridging has been negotiated.
+  */
+-static inline int
+-cxgb4_ieee_negotiation_complete(struct net_device *dev,
+-				enum cxgb4_dcb_fw_msgs dcb_subtype)
++static inline int cxgb4_ieee_negotiation_complete(struct net_device *dev, enum cxgb4_dcb_fw_msgs dcb_subtype)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 	struct port_dcb_info *dcb = &pi->dcb;
+@@ -907,8 +1020,7 @@
+ 		(dcb->supported & DCB_CAP_DCBX_VER_IEEE));
+ }
+ 
+-static int cxgb4_ieee_read_ets(struct net_device *dev, struct ieee_ets *ets,
+-			       int local)
++static int cxgb4_ieee_read_ets(struct net_device *dev, struct ieee_ets *ets, int local)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 	struct port_dcb_info *dcb = &pi->dcb;
+@@ -930,9 +1042,9 @@
+ 	}
+ 
+ 	pcmd.u.dcb.pgid.type = FW_PORT_DCB_TYPE_PGID;
+-	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
++        err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGID failed with %d\n", -err);
++		CH_ERR(adap, "DCB read PGID failed with %d\n", -err);
+ 		return err;
+ 	}
+ 
+@@ -943,13 +1055,12 @@
+ 	else
+ 		INIT_PORT_DCB_READ_PEER_CMD(pcmd, pi->port_id);
+ 
+-	pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
+-	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+-	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+-			-err);
+-		return err;
+-	}
++        pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
++        err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
++        if (err != FW_PORT_DCB_CFG_SUCCESS) {
++                CH_ERR(adap, "DCB read PGRATE failed with %d\n", -err);
++                return err;
++        }
+ 
+ 	for (i = 0; i < IEEE_8021QAZ_MAX_TCS; i++) {
+ 		bwg = (tc_info >> ((7 - i) * 4)) & 0xF;
+@@ -976,7 +1087,7 @@
+ 	memset(pfc, 0, sizeof(struct ieee_pfc));
+ 
+ 	if (!(dcb->msgs & CXGB4_DCB_FW_PFC))
+-		return 0;
++                return 0;
+ 
+ 	pfc->pfc_cap = dcb->pfc_num_tcs_supported;
+ 	pfc->pfc_en = bitswap_1(dcb->pfcen);
+@@ -984,12 +1095,8 @@
+ 	return 0;
+ }
+ 
+-static int cxgb4_ieee_peer_ets(struct net_device *dev, struct ieee_ets *ets)
+-{
+-	return cxgb4_ieee_read_ets(dev, ets, 0);
+-}
+-
+-/* Fill in the Application User Priority Map associated with the
++/*
++ * Fill in the Application User Priority Map associated with the
+  * specified Application.
+  * Priority for IEEE dcb_app is an integer, with 0 being a valid value
+  */
+@@ -1012,7 +1119,8 @@
+ 	return 0;
+ }
+ 
+-/* Write a new Application User Priority Map for the specified Application ID.
++/*
++ * Write a new Application User Priority Map for the specified Application ID.
+  * Priority for IEEE dcb_app is an integer, with 0 being a valid value
+  */
+ static int cxgb4_ieee_setapp(struct net_device *dev, struct dcb_app *app)
+@@ -1024,47 +1132,54 @@
+ 	if (!(app->selector && app->protocol))
+ 		return -EINVAL;
+ 
+-	if (!(app->selector > IEEE_8021QAZ_APP_SEL_ETHERTYPE  &&
++	if (!(app->selector > IEEE_8021QAZ_APP_SEL_ETHERTYPE  && 
+ 	      app->selector < IEEE_8021QAZ_APP_SEL_ANY))
+ 		return -EINVAL;
+ 
+ 	/* change selector to a format that firmware understands */
+-	ret = __cxgb4_setapp(dev, app->selector - 1, app->protocol,
+-			     (1 << app->priority));
++	ret = __cxgb4_setapp(dev, app->selector - 1, app->protocol, (1 << app->priority));
+ 	if (ret)
+ 		return ret;
+-
+-	return dcb_ieee_setapp(dev, app);
++	else
++		return dcb_ieee_setapp(dev, app);
+ }
+ 
+-/* Return our DCBX parameters.
++/*
++ * Return our DCBX parameters.
+  */
+ static u8 cxgb4_getdcbx(struct net_device *dev)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 
+-	/* This is already set by cxgb4_set_dcb_caps, so just return it */
++	/*
++	 * This is already set correctly by cxgb4_set_dcb_caps, so just return
++	 * it.
++	 */
+ 	return pi->dcb.supported;
+ }
+ 
+-/* Set our DCBX parameters.
++/*
++ * Set our DCBX parameters.
+  */
+ static u8 cxgb4_setdcbx(struct net_device *dev, u8 dcb_request)
+ {
+ 	struct port_info *pi = netdev2pinfo(dev);
+ 
+-	/* Filter out requests which exceed our capabilities.
++	/*
++	 * Filter out requests which exceed our capabilities.
+ 	 */
+ 	if ((dcb_request & (CXGB4_DCBX_FW_SUPPORT | CXGB4_DCBX_HOST_SUPPORT))
+ 	    != dcb_request)
+ 		return 1;
+ 
+-	/* Can't enable DCB if we haven't successfully negotiated it.
++	/*
++	 * Can't enable DCB if we haven't successfully negotiated it.
+ 	 */
+ 	if (!cxgb4_dcb_state_synced(pi->dcb.state))
+ 		return 1;
+ 
+-	/* There's currently no mechanism to allow for the firmware DCBX
++	/*
++	 * There's currently no mechanism to allow for the firmware DCBX
+ 	 * negotiation to be changed from the Host Driver.  If the caller
+ 	 * requests exactly the same parameters that we already have then
+ 	 * we'll allow them to be successfully "set" ...
+@@ -1075,9 +1190,11 @@
+ 	pi->dcb.supported = dcb_request;
+ 	return 0;
+ }
++#endif /* LINUX_VERSION_CODE >= 2.6.38 */
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
+ static int cxgb4_getpeer_app(struct net_device *dev,
+-			     struct dcb_peer_app_info *info, u16 *app_count)
++			struct dcb_peer_app_info *info, u16 *app_count)
+ {
+ 	struct fw_port_cmd pcmd;
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -1098,8 +1215,8 @@
+ 		err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 
+ 		if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-			dev_err(adap->pdev_dev, "DCB app table read failed with %d\n",
+-				-err);
++			CH_ERR(adap, "DCB app table read failed with %d\n",
++			       -err);
+ 			return err;
+ 		}
+ 
+@@ -1111,7 +1228,8 @@
+ 	return err;
+ }
+ 
+-static int cxgb4_getpeerapp_tbl(struct net_device *dev, struct dcb_app *table)
++static int cxgb4_getpeerapp_tbl(struct net_device *dev,
++			struct dcb_app *table)
+ {
+ 	struct fw_port_cmd pcmd;
+ 	struct port_info *pi = netdev2pinfo(dev);
+@@ -1128,25 +1246,24 @@
+ 		err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 
+ 		if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-			dev_err(adap->pdev_dev, "DCB app table read failed with %d\n",
+-				-err);
++			CH_ERR(adap, "DCB app table read failed with %d\n",
++			       -err);
+ 			return err;
+ 		}
+ 
+ 		/* find first empty slot */
+ 		if (!pcmd.u.dcb.app_priority.protocolid)
+ 			break;
++		table[i].selector = (pcmd.u.dcb.app_priority.sel_field + 1);
++		table[i].protocol = be16_to_cpu(pcmd.u.dcb.app_priority.protocolid);
++		table[i].priority = ffs(pcmd.u.dcb.app_priority.user_prio_map) - 1;
+ 
+-		table[i].selector = (pcmd.u.dcb.app_priority.sel_field + 1);
+-		table[i].protocol =
+-			be16_to_cpu(pcmd.u.dcb.app_priority.protocolid);
+-		table[i].priority =
+-			ffs(pcmd.u.dcb.app_priority.user_prio_map) - 1;
+ 	}
+ 	return err;
+ }
+ 
+-/* Return Priority Group information.
++/*
++ * Return Priority Group information.
+  */
+ static int cxgb4_cee_peer_getpg(struct net_device *dev, struct cee_pg *pg)
+ {
+@@ -1156,7 +1273,8 @@
+ 	u32 pgid;
+ 	int i, err;
+ 
+-	/* We're always "willing" -- the Switch Fabric always dictates the
++	/*
++	 * We're always "willing" -- the Switch Fabric always dictates the
+ 	 * DCBX parameters to us.
+ 	 */
+ 	pg->willing = true;
+@@ -1165,7 +1283,7 @@
+ 	pcmd.u.dcb.pgid.type = FW_PORT_DCB_TYPE_PGID;
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGID failed with %d\n", -err);
++		CH_ERR(adap, "DCB read PGID failed with %d\n", -err);
+ 		return err;
+ 	}
+ 	pgid = be32_to_cpu(pcmd.u.dcb.pgid.pgid);
+@@ -1177,20 +1295,20 @@
+ 	pcmd.u.dcb.pgrate.type = FW_PORT_DCB_TYPE_PGRATE;
+ 	err = t4_wr_mbox(adap, adap->mbox, &pcmd, sizeof(pcmd), &pcmd);
+ 	if (err != FW_PORT_DCB_CFG_SUCCESS) {
+-		dev_err(adap->pdev_dev, "DCB read PGRATE failed with %d\n",
+-			-err);
++		CH_ERR(adap, "DCB read PGRATE failed with %d\n", -err);
+ 		return err;
+ 	}
+ 
+ 	for (i = 0; i < CXGB4_MAX_PRIORITY; i++)
+-		pg->pg_bw[i] = pcmd.u.dcb.pgrate.pgrate[i];
++		pg->pg_bw[i] = 	pcmd.u.dcb.pgrate.pgrate[i];
+ 
+ 	pg->tcs_supported = pcmd.u.dcb.pgrate.num_tcs_supported;
+ 
+ 	return 0;
+ }
+ 
+-/* Return Priority Flow Control information.
++/*
++ * Return Priority Flow Control information.
+  */
+ static int cxgb4_cee_peer_getpfc(struct net_device *dev, struct cee_pfc *pfc)
+ {
+@@ -1200,52 +1318,108 @@
+ 
+ 	/* Firmware sends this to us in a formwat that is a bit flipped version
+ 	 * of spec, correct it before we send it to host. This is taken care of
+-	 * by bit shifting in other uses of pfcen
+-	 */
++	 * by bit shifting in other uses of pfcen */
+ 	pfc->pfc_en = bitswap_1(pi->dcb.pfcen);
+ 
+ 	pfc->tcs_supported = pi->dcb.pfc_num_tcs_supported;
+-
+ 	return 0;
+ }
+ 
++static int cxgb4_ieee_peer_ets(struct net_device *dev, struct ieee_ets * ets)
++{
++	return cxgb4_ieee_read_ets(dev, ets, 0);
++}
++
++#endif /* LINUX_VERSION_CODE >= 2.6.39 */
++
+ const struct dcbnl_rtnl_ops cxgb4_dcb_ops = {
+-	.ieee_getets		= cxgb4_ieee_get_ets,
+-	.ieee_getpfc		= cxgb4_ieee_get_pfc,
+-	.ieee_getapp		= cxgb4_ieee_getapp,
+-	.ieee_setapp		= cxgb4_ieee_setapp,
+-	.ieee_peer_getets	= cxgb4_ieee_peer_ets,
+-	.ieee_peer_getpfc	= cxgb4_ieee_get_pfc,
++	/*
++	 * The bnx2x and qlcnic drivers seems to support DCB_CAP_DCBX_LLD_MANAGED
++	 * but ixgbe and mlx4 do not appear to support this.  Meanwhile,
++	 * ixgbe seems to support IEEE & CEE but bnx2x only seems to support CEE
++	 * while qlcnic supports IEEE on 83xx cards only and mlx4 is IEEE only.
++	 *
++	 * The [!]ixgbe, [!]bnx2x, [!]mlx4  and [!]qlcnic annotations following
++	 * the entries below indicate which of the DCB function prototypes are
++	 * implemented be each of the indicated drivers (a "!" indicating that
++	 * the function is not supported).  We need to look at each of the
++	 * ones that we don't implement to see if we need to add support for
++	 * them.
++	 */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
++	/* IEEE 802.1Qaz std */
++	.ieee_getets		= cxgb4_ieee_get_ets,	// ixgbe, !bnx2x, mlx4, !qlcnic
++	.ieee_setets		= NULL,			// ixgbe, !bnx2x, mlx4, !qlcnic
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
++	.ieee_getmaxrate	= NULL,			// !ixgbe, !bnx2x, mlx4, !qlcnic
++	.ieee_setmaxrate	= NULL,			// !ixgbe, !bnx2x, mlx4, !qlcnic
++#endif
++	.ieee_getpfc		= cxgb4_ieee_get_pfc,	// ixgbe, !bnx2x, mlx4, !qlcnic
++	.ieee_setpfc		= NULL,			// ixgbe, !bnx2x, mlx4, !qlcnic
++	.ieee_getapp    	= cxgb4_ieee_getapp,	// !ixgbe, !bnx2x, !mlx4, !qlcnic
++	.ieee_setapp		= cxgb4_ieee_setapp,	// ixgbe, !bnx2x, !mlx4, !qlcnic
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
++	.ieee_delapp		= NULL,			// ixgbe, !bnx2x, !mlx4, !qlcnic
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
++	.ieee_peer_getets	= cxgb4_ieee_peer_ets,	// !ixgbe, !bnx2x, !mlx4, !qlcnic
++	.ieee_peer_getpfc	= cxgb4_ieee_get_pfc,	// !ixgbe, !bnx2x, !mlx4, !qlcnic
++#endif
++#endif /* LINUX_VERSION_CODE >= 2.6.38 */
+ 
+ 	/* CEE std */
+-	.getstate		= cxgb4_getstate,
+-	.setstate		= cxgb4_setstate,
+-	.getpgtccfgtx		= cxgb4_getpgtccfg_tx,
+-	.getpgbwgcfgtx		= cxgb4_getpgbwgcfg_tx,
+-	.getpgtccfgrx		= cxgb4_getpgtccfg_rx,
+-	.getpgbwgcfgrx		= cxgb4_getpgbwgcfg_rx,
+-	.setpgtccfgtx		= cxgb4_setpgtccfg_tx,
+-	.setpgbwgcfgtx		= cxgb4_setpgbwgcfg_tx,
+-	.setpfccfg		= cxgb4_setpfccfg,
+-	.getpfccfg		= cxgb4_getpfccfg,
+-	.setall			= cxgb4_setall,
+-	.getcap			= cxgb4_getcap,
+-	.getnumtcs		= cxgb4_getnumtcs,
+-	.setnumtcs		= cxgb4_setnumtcs,
+-	.getpfcstate		= cxgb4_getpfcstate,
+-	.setpfcstate		= cxgb4_setpfcstate,
+-	.getapp			= cxgb4_getapp,
+-	.setapp			= cxgb4_setapp,
++	.getstate		= cxgb4_getstate,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.setstate		= cxgb4_setstate,	// ixgbe, bnx2x, !mlx4, !qlcnic
++	.getpermhwaddr		= NULL,			// ixgbe, bnx2x, !mlx4, qlcnic
++	.setpgtccfgtx		= cxgb4_setpgtccfg_tx,	// ixgbe, bnx2x, !mlx4, !qlcnic
++	.setpgbwgcfgtx		= cxgb4_setpgbwgcfg_tx,	// ixgbe, bnx2x, !mlx4, !qlcnic
++	.setpgtccfgrx		= NULL,			// ixgbe, bnx2x, !mlx4, !qlcnic
++	.setpgbwgcfgrx		= NULL,			// ixgbe, bnx2x, !mlx4, !qlcnic
++	.getpgtccfgtx		= cxgb4_getpgtccfg_tx,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.getpgbwgcfgtx		= cxgb4_getpgbwgcfg_tx,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.getpgtccfgrx		= cxgb4_getpgtccfg_rx,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.getpgbwgcfgrx		= cxgb4_getpgbwgcfg_rx,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.setpfccfg		= cxgb4_setpfccfg,	// ixgbe, bnx2x, !mlx4, !qlcnic
++	.getpfccfg		= cxgb4_getpfccfg,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.setall			= cxgb4_setall,		// ixgbe, bnx2x, !mlx4, !qlcnic
++	.getcap			= cxgb4_getcap,		// ixgbe, bnx2x, !mlx4, qlcnic
++	.getnumtcs		= cxgb4_getnumtcs,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.setnumtcs		= cxgb4_setnumtcs,	// ixgbe, bnx2x, !mlx4, !qlcnic
++	.getpfcstate		= cxgb4_getpfcstate,	// ixgbe, bnx2x, !mlx4, qlcnic
++	.setpfcstate		= cxgb4_setpfcstate,	// ixgbe, bnx2x, !mlx4, !qlcnic
++	.getbcncfg		= NULL,			// !ixgbe, !bnx2x, !mlx4, !qlcnic
++	.setbcncfg		= NULL,			// !ixgbe, !bnx2x, !mlx4, !qlcnic
++	.getbcnrp		= NULL,			// !ixgbe, !bnx2x, !mlx4, !qlcnic
++	.setbcnrp		= NULL,			// !ixgbe, !bnx2x, !mlx4, !qlcnic
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32)
++	.getapp			= cxgb4_getapp,		// ixgbe, !bnx2x, !mlx4, qlcnic
++	.setapp			= cxgb4_setapp,		// ixgbe, bnx2x, !mlx4, !qlcnic
++	/*
++	 * ixgbe used to have .setapp() but it was removed in commit
++	 * c8ca76ebc6e50752c5311b92bb9aef7edb324577 starting in Linux 3.0.
++	 * Something about the "app data on the kernel dcb_app list we no
++	 * longer need to specifically handle them in ixgbe for the CEE case."
++	 * It appears to somehow be magically taken care of by the .setall()
++	 * routine?  But since we currently only support out to 2.6.39 we
++	 * should probably keep this ...
++	 */
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
++	.getfeatcfg		= NULL,			// !ixgbe, bnx2x, !mlx4, qlcnic
++	.setfeatcfg		= NULL,			// !ixgbe, bnx2x, !mlx4, !qlcnic
+ 
+ 	/* DCBX configuration */
+-	.getdcbx		= cxgb4_getdcbx,
+-	.setdcbx		= cxgb4_setdcbx,
++	.getdcbx		= cxgb4_getdcbx,	// ixgbe, bnx2x, mlx4, qlcnic
++	.setdcbx		= cxgb4_setdcbx,	// ixgbe, bnx2x, mlx4, !qlcnic
++#endif
+ 
+-	/* peer apps */
+-	.peer_getappinfo	= cxgb4_getpeer_app,
+-	.peer_getapptable	= cxgb4_getpeerapp_tbl,
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)
++	/* IEEE peer apps */
++	.peer_getappinfo	= cxgb4_getpeer_app,	// !ixgbe, bnx2x, !mlx4, qlcnic
++	.peer_getapptable	= cxgb4_getpeerapp_tbl,	// !ixgbe, bnx2x, !mlx4, qlcnic
+ 
+ 	/* CEE peer */
+-	.cee_peer_getpg		= cxgb4_cee_peer_getpg,
+-	.cee_peer_getpfc	= cxgb4_cee_peer_getpfc,
++	.cee_peer_getpg		= cxgb4_cee_peer_getpg,	// !ixgbe, bnx2x, !mlx4, qlcnic
++	.cee_peer_getpfc	= cxgb4_cee_peer_getpfc,// !ixgbe, bnx2x, !mlx4, qlcnic
++#endif
+ };
+diff -r 30 src/network/cxgb4/cxgb4_main.c
+--- a/src/network/cxgb4/cxgb4_main.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/cxgb4_main.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -556,75 +556,145 @@
+ 		       dev->name, pi->mod_type);
+ }
+ 
+-static inline int cxgb4_set_addr_hash(struct port_info *pi)
+-{
++static int cxgb4_dev_add_addr(struct net_device *netdev, const u8 *mac_addr,
++			      u64 *hash)
++{
++	struct port_info *pi = netdev_priv(netdev);
+ 	struct adapter *adap = pi->adapter;
++	bool free = false;
++	const u8 *maclist[1] = {mac_addr};
++
++	return t4_alloc_mac_filt(adap, adap->mbox, pi->viid, free, 1, maclist,
++				 NULL, hash, false);
++}
++
++static int cxgb4_dev_del_addr(struct net_device *netdev, const u8 *mac_addr)
++{
++	struct port_info *pi = netdev_priv(netdev);
++	struct adapter *adap = pi->adapter;
++	int ret;
++	const u8 *maclist[1] = {mac_addr};
++
++	ret = t4_free_mac_filt(adap, adap->mbox, pi->viid, 1, maclist, false);
++	return ret < 0 ? -EINVAL : 0;
++}
++
++/* Configure the exact and hash address filters to handle a port's multicast
++ * and secondary unicast MAC addresses.
++ */
++static int cxgb4_mac_sync(struct net_device *netdev)
++{
++	struct port_info *pi = netdev_priv(netdev);
++	struct adapter *adap = pi->adapter;
++	struct netdev_hw_addr *ha;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
++	const struct dev_addr_list *da;
++#endif
++	unsigned int uc_count = netdev_uc_count(netdev);
++	unsigned int mc_count = netdev_mc_count(netdev);
++	unsigned int mac_count = uc_count + mc_count;
++	unsigned int max_naddr = adap->params.arch.mps_tcam_size;
++	u8 (*mac_addr)[ETH_ALEN];
++	struct hash_mac_addr *entry, *new_entry, *tmp;
++	unsigned int i, j;
++	u64 hash = 0;
+ 	u64 vec = 0;
+ 	bool ucast = false;
+-	struct hash_mac_addr *entry;
++
++	mac_addr = kzalloc(sizeof(*mac_addr) * mac_count, GFP_ATOMIC);
++	if (!mac_addr)
++		return -ENOMEM;
++
++	if (mac_count > max_naddr) {
++		netdev_warn(netdev, "Registering only %d out of %d "
++			    "mac addresses\n",
++			    max_naddr, mac_count);
++		mac_count = max_naddr;
++	}
++
++	/* Is there an easier way?  Trying to minimize to
++	 * calls to add/del unicast addrs.  We keep the
++	 * addrs from the last call in adap->uc_addr and
++	 * look for changes to add/del.
++	 */
++	i = 0;
++	netdev_for_each_uc_addr(ha, netdev) {
++		if (i == uc_count)
++			break;
++		ether_addr_copy(mac_addr[i++], ha->addr);
++	}
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
++	for (da = netdev->mc_list; da; da = da->next) {
++		if (i == mc_count)
++			break;
++		ether_addr_copy(mac_addr[i++], da->dmi_addr);
++#else
++	netdev_for_each_mc_addr(ha, netdev) {
++		if (i == mc_count)
++			break;
++		ether_addr_copy(mac_addr[i++], ha->addr);
++#endif
++	}
++
++	for (i = 0; i < adap->mac_count; i++) {
++		for (j = 0; j < mac_count; j++)
++			if (ether_addr_equal(adap->mac_addr[i], mac_addr[j]))
++				break;
++		if (j == mac_count) {
++			cxgb4_dev_del_addr(netdev, adap->mac_addr[i]);
++			/* If the MAC address to be removed is in the hash addr
++			 * list, delete it from the list
++			 */
++			list_for_each_entry_safe(entry, tmp,  &adap->mac_hlist, list) {
++				if (ether_addr_equal(entry->addr, adap->mac_addr[i])) {
++					list_del(&entry->list);
++					kfree(entry);
++				}
++			}
++		}
++	}
++
++	for (i = 0; i < mac_count; i++) {
++		for (j = 0; j < adap->mac_count; j++)
++			if (ether_addr_equal(mac_addr[i], adap->mac_addr[j]))
++				break;
++		if (j == adap->mac_count) {
++			/* if hash != 0, then add the addr to hash addr list
++			 * so on the end we will calculate the hash for the
++			 * list and program it
++			 */
++			if (!cxgb4_dev_add_addr(netdev, mac_addr[i], &hash)) {
++				if (hash > 0) {
++					new_entry = kzalloc(sizeof(*new_entry),
++							    GFP_ATOMIC);
++					if (!new_entry)
++						return -ENOMEM;
++					ether_addr_copy(new_entry->addr,
++							mac_addr[j]);
++					list_add_tail(&new_entry->list,
++						      &adap->mac_hlist);
++				}
++			}
++		}
++	}
+ 
+ 	/* Calculate the hash vector for the updated list and program it */
+ 	list_for_each_entry(entry, &adap->mac_hlist, list) {
+ 		ucast |= is_unicast_ether_addr(entry->addr);
+ 		vec |= (1ULL << hash_mac_addr(entry->addr));
+ 	}
+-	return t4_set_addr_hash(adap, adap->mbox, pi->viid, ucast,
+-				vec, false);
+-}
+-
+-static int cxgb4_mac_sync(struct net_device *netdev, const u8 *mac_addr)
+-{
+-	struct port_info *pi = netdev_priv(netdev);
+-	struct adapter *adap = pi->adapter;
+-	int ret;
+-	u64 mhash = 0;
+-	u64 uhash = 0;
+-	bool free = false;
+-	bool ucast = is_unicast_ether_addr(mac_addr);
+-	const u8 *maclist[1] = {mac_addr};
+-	struct hash_mac_addr *new_entry;
+-
+-	ret = t4_alloc_mac_filt(adap, adap->mbox, pi->viid, free, 1, maclist,
+-				NULL, ucast ? &uhash : &mhash, false);
+-	if (ret < 0)
+-		goto out;
+-	/* if hash != 0, then add the addr to hash addr list
+-	 * so on the end we will calculate the hash for the
+-	 * list and program it
+-	 */
+-	if (uhash || mhash) {
+-		new_entry = kzalloc(sizeof(*new_entry), GFP_ATOMIC);
+-		if (!new_entry)
+-			return -ENOMEM;
+-		ether_addr_copy(new_entry->addr, mac_addr);
+-		list_add_tail(&new_entry->list, &adap->mac_hlist);
+-		ret = cxgb4_set_addr_hash(pi);
+-	}
+-out:
+-	return ret < 0 ? ret : 0;
+-}
+-
+-static int cxgb4_mac_unsync(struct net_device *netdev, const u8 *mac_addr)
+-{
+-	struct port_info *pi = netdev_priv(netdev);
+-	struct adapter *adap = pi->adapter;
+-	int ret;
+-	const u8 *maclist[1] = {mac_addr};
+-	struct hash_mac_addr *entry, *tmp;
+-
+-	/* If the MAC address to be removed is in the hash addr
+-	 * list, delete it from the list and update hash vector
+-	 */
+-	list_for_each_entry_safe(entry, tmp, &adap->mac_hlist, list) {
+-		if (ether_addr_equal(entry->addr, mac_addr)) {
+-			list_del(&entry->list);
+-			kfree(entry);
+-			return cxgb4_set_addr_hash(pi);
+-		}
+-	}
+-
+-	ret = t4_free_mac_filt(adap, adap->mbox, pi->viid, 1, maclist, false);
+-	return ret < 0 ? -EINVAL : 0;
++	t4_set_addr_hash(adap, adap->mbox, pi->viid, ucast != 0,
++			 vec, false);
++
++	/* Save the list to compare against next time
++	*/
++	for (i = 0; i < mac_count; i++)
++		ether_addr_copy(adap->mac_addr[i], mac_addr[i]);
++
++	adap->mac_count = mac_count;
++	kfree(mac_addr);
++	return 0;
+ }
+ 
+ /*
+@@ -633,19 +703,20 @@
+  */
+ static int set_rxmode(struct net_device *dev, int mtu, bool sleep_ok)
+ {
++	int ret = 0;
+ 	struct port_info *pi = netdev_priv(dev);
+ 	struct adapter *adapter = pi->adapter;
+ 
+-	if (!(dev->flags & IFF_PROMISC)) {
+-		__dev_uc_sync(dev, cxgb4_mac_sync, cxgb4_mac_unsync);
+-		if (!(dev->flags & IFF_ALLMULTI))
+-			__dev_mc_sync(dev, cxgb4_mac_sync, cxgb4_mac_unsync);
+-	}
+-
+-	return t4_set_rxmode(adapter, adapter->mbox, pi->viid, mtu,
+-			     (dev->flags & IFF_PROMISC) ? 1 : 0,
+-			     (dev->flags & IFF_ALLMULTI) ? 1 : 0, 1, -1,
+-			     sleep_ok);
++	if (!(dev->flags & IFF_PROMISC))
++		ret = cxgb4_mac_sync(dev);
++
++	if (ret == 0)
++		ret = t4_set_rxmode(adapter, adapter->mbox, pi->viid, mtu,
++				    (dev->flags & IFF_PROMISC) ? 1 : 0,
++				    (dev->flags & IFF_ALLMULTI) ? 1 : 0, 1, -1,
++				    sleep_ok);
++
++	return ret;
+ }
+ 
+ static void cxgb_set_rxmode(struct net_device *dev)
+@@ -896,6 +967,7 @@
+ 			 const struct pkt_gl *gl)
+ {
+ 	struct sge_ofld_rxq *rxq = container_of(q, struct sge_ofld_rxq, rspq);
++	unsigned int napi_id = cxgb4_get_napi_id(&q->napi);
+ 	int ret;
+ 
+ 	/* FW can send CPLs encapsulated in a CPL_FW4_MSG.
+@@ -906,8 +978,7 @@
+ 
+ 	if (q->flush_handler)
+ 		ret = cxgb4_ulds[q->uld].lro_rx_handler(q->adap->uld_handle[q->uld],
+-							rsp, gl, &q->lro_mgr,
+-							&q->napi);
++						  rsp, gl, &q->lro_mgr, napi_id);
+ 	else
+ 		ret = cxgb4_ulds[q->uld].rx_handler(q->adap->uld_handle[q->uld],
+ 					      rsp, gl);
+@@ -6534,7 +6605,7 @@
+ 
+ #define PCI_SPEED_SIZE 8
+ #define PCI_WIDTH_SIZE 8
+-
++ 
+ static void cxgb4_check_pcie_caps(struct adapter *adap)
+ {
+ 	u16 link_status;
+@@ -6783,19 +6854,13 @@
+ {
+ 	struct port_info *pi = netdev_priv(netdev);
+ 	struct adapter *adapter = pi->adapter;
+-	unsigned int chip_ver = CHELSIO_CHIP_VERSION(adapter->params.chip);
+ 	u8 match_all_mac[] = { 0, 0, 0, 0, 0, 0 };
+ 	int i, ret;
++	unsigned int chip_ver = CHELSIO_CHIP_VERSION(adapter->params.chip);
+ 
+ 	if (chip_ver == CHELSIO_T4)
+ 		return;
+ 
+-	/* For T6 fw reserves last 2 entries for
+-	 * storing match all mac filter (config file entry).
+-	 */
+-	if ((chip_ver > CHELSIO_T5) && !adapter->rawf_cnt)
+-		return;
+-
+ 	/* Callback for adding vxlan port can be called with the same port
+ 	 * for both IPv4 and IPv6. We should not disable the offloading when
+ 	 * the same port for both protocols is added and
+@@ -6830,6 +6895,7 @@
+ 
+ 	t4_write_reg(adapter, A_MPS_RX_VXLAN_TYPE,
+ 		     V_VXLAN(be16_to_cpu(port)) | F_VXLAN_EN);
++
+ 	/* Create a 'match all' mac filter entry for inner mac,
+ 	 * if raw mac interface is supported. Once the linux kernel provides
+ 	 * driver entry points for adding/deleting the inner mac addresses,
+@@ -6837,7 +6903,7 @@
+ 	 * exact match filters.
+ 	 * Deleting of this entry is not working.
+ 	 */
+-	if (adapter->rawf_cnt) {
++	if (adapter->rawf_cnt)
+ 		for_each_port(adapter, i) {
+ 			pi = adap2pinfo(adapter, i);
+ 
+@@ -6848,14 +6914,13 @@
+ 						    pi->port_id,
+ 						    1, true);
+ 			if (ret < 0) {
+-				netdev_info(netdev, "Failed to allocate a mac "
+-					"filter entry, not adding port %d\n",
+-					be16_to_cpu(port));
++				netdev_info(netdev, "Failed to allocate a mac filter "
++						     "entry, not adding port %d\n",
++						     be16_to_cpu(port));
+ 				cxgb_del_vxlan_port(netdev, sa_family, port);
+ 				return;
+ 			}
+ 		}
+-	}
+ }
+ 
+ #endif
+diff -r 30 src/network/cxgb4/cxgb4_ofld.h
+--- a/src/network/cxgb4/cxgb4_ofld.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/cxgb4_ofld.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -427,8 +427,7 @@
+ 	int (*control)(void *handle, enum cxgb4_control control, ...);
+ 	int (*lro_rx_handler)(void *handle, const __be64 *rsp,
+ 			      const struct pkt_gl *gl,
+-			      struct t4_lro_mgr *lro_mgr,
+-			      struct napi_struct *napi);
++			      struct t4_lro_mgr *lro_mgr, unsigned int napi_id);
+ 	void (*lro_flush)(struct t4_lro_mgr *);
+ };
+ 
+@@ -458,8 +457,7 @@
+ int cxgb4_set_params(struct net_device *dev, unsigned int nparams,
+ 		     const u32 *params, const u32 *val);
+ u64 cxgb4_read_sge_timestamp(struct net_device *dev);
+-struct sk_buff *cxgb4_pktgl_to_skb(struct napi_struct *napi,
+-				   const struct pkt_gl *gl,
++struct sk_buff *cxgb4_pktgl_to_skb(const struct pkt_gl *gl,
+ 				   unsigned int skb_len, unsigned int pull_len);
+ 
+ enum cxgb4_bar2_qtype { CXGB4_BAR2_QTYPE_EGRESS, CXGB4_BAR2_QTYPE_INGRESS };
+diff -r 30 src/network/cxgb4/cxgb4_ptp.c
+--- a/src/network/cxgb4/cxgb4_ptp.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/cxgb4_ptp.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -393,8 +393,8 @@
+ 	.pps            = 0,
+ 	.adjfreq        = cxgb4_ptp_adjfreq,
+ 	.adjtime        = cxgb4_ptp_adjtime,
+-	.gettime64      = cxgb4_ptp_gettime,
+-	.settime64      = cxgb4_ptp_settime,
++	.gettime        = cxgb4_ptp_gettime,
++	.settime        = cxgb4_ptp_settime,
+ 	.enable         = cxgb4_ptp_enable,
+ };
+ 
+@@ -415,8 +415,12 @@
+ 	adapter->ptp_clock_info = cxgb4_ptp_clock_info;
+ 	spin_lock_init(&adapter->ptp_lock);
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0) 
++	adapter->ptp_clock = ptp_clock_register(&adapter->ptp_clock_info);
++#else
+ 	adapter->ptp_clock = ptp_clock_register(&adapter->ptp_clock_info,
+-						&adapter->pdev->dev);
++					&adapter->pdev->dev);
++#endif
+ 	if (!adapter->ptp_clock) {
+ 		CH_WARN(adapter, "PTP Clock registration has failed\n");
+ 		return;
+diff -r 30 src/network/cxgb4/sge.c
+--- a/src/network/cxgb4/sge.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/sge.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -444,7 +444,7 @@
+ 		if (d->skb) {                       /* an SGL is present */
+ 			if (need_unmap)
+ 				unmap_sgl(dev, d->skb, d->sgl, q);
+-			dev_consume_skb_any(d->skb);
++			kfree_skb(d->skb);
+ 			d->skb = NULL;
+ 		}
+ #if IS_ENABLED(CONFIG_VXLAN) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,0))
+@@ -2132,7 +2132,7 @@
+ 	 * anything shorter than an Ethernet header.
+ 	 */
+ 	if (unlikely(skb->len < ETH_HLEN)) {
+-out_free:	dev_kfree_skb_any(skb);
++out_free:	dev_kfree_skb(skb);
+ 		return NETDEV_TX_OK;
+ 	}
+ 
+@@ -2434,7 +2434,7 @@
+ 
+ 	if (immediate) {
+ 		inline_tx_skb(skb, &q->q, sgl);
+-		dev_consume_skb_any(skb);
++		dev_kfree_skb(skb);
+ 	} else {
+ 		int last_desc;
+ 
+@@ -3411,7 +3411,6 @@
+ 
+ /**
+  *	cxgb4_pktgl_to_skb - build an sk_buff from a packet gather list
+- *	@napi: rspq's napi struct
+  *	@gl: the gather list
+  *	@skb_len: size of sk_buff main body if it carries fragments
+  *	@pull_len: amount of data to move to the sk_buff's main body
+@@ -3419,8 +3418,7 @@
+  *	Builds an sk_buff from the given packet gather list.  Returns the
+  *	sk_buff or %NULL if sk_buff allocation failed.
+  */
+-struct sk_buff *cxgb4_pktgl_to_skb(struct napi_struct *napi,
+-				   const struct pkt_gl *gl,
++struct sk_buff *cxgb4_pktgl_to_skb(const struct pkt_gl *gl,
+ 				   unsigned int skb_len, unsigned int pull_len)
+ {
+ 	struct sk_buff *skb;
+@@ -3431,13 +3429,13 @@
+ 	 * In this case packets up to RX_COPY_THRES have only one fragment.
+ 	 */
+ 	if (gl->tot_len <= RX_COPY_THRES) {
+-		skb = napi_alloc_skb(napi, gl->tot_len);
++		skb = dev_alloc_skb(gl->tot_len);
+ 		if (unlikely(!skb))
+ 			goto out;
+ 		__skb_put(skb, gl->tot_len);
+ 		skb_copy_to_linear_data(skb, gl->va, gl->tot_len);
+ 	} else {
+-		skb = napi_alloc_skb(napi, skb_len);
++		skb = dev_alloc_skb(skb_len);
+ 		if (unlikely(!skb))
+ 			goto out;
+ 		__skb_put(skb, pull_len);
+@@ -3724,12 +3722,11 @@
+  * be delivered to anyone and send it to the stack for capture.
+  */
+ static noinline int handle_trace_pkt(struct adapter *adap,
+-				     struct napi_struct *napi,
+ 				     const struct pkt_gl *gl)
+ {
+ 	struct sk_buff *skb;
+ 
+-	skb = cxgb4_pktgl_to_skb(napi, gl, RX_PULL_LEN, RX_PULL_LEN);
++	skb = cxgb4_pktgl_to_skb(gl, RX_PULL_LEN, RX_PULL_LEN);
+ 	if (unlikely(!skb)) {
+ 		t4_pktgl_free(gl);
+ 		return 0;
+@@ -4539,7 +4536,7 @@
+ #endif /* CONFIG_PO_FCOE */
+ 
+ 	if (unlikely(*(u8 *)rsp == cpl_trace_pkt))
+-		return handle_trace_pkt(q->adap, &q->napi, si);
++		return handle_trace_pkt(q->adap, si);
+ 
+ 	pkt = (void *)&rsp[1];
+ 	/* Compressed error vector is enabled for T6 only */
+@@ -4606,7 +4603,7 @@
+ 		return 0;
+ 	}
+ #endif
+-	skb = cxgb4_pktgl_to_skb(&q->napi, si, RX_PKT_SKB_LEN, RX_PULL_LEN);
++	skb = cxgb4_pktgl_to_skb(si, RX_PKT_SKB_LEN, RX_PULL_LEN);
+ 	if (unlikely(!skb)) {
+ 		t4_pktgl_free(si);
+ 		rxq->stats.rx_drops++;
+@@ -4925,13 +4922,13 @@
+ 	u32 val;
+ 
+ 	if (!cxgb_poll_lock_napi(q))
+-		return budget;
++		return work_done;
+ 
+ 	work_done = process_responses(q, budget);
+ 	if (likely(work_done < budget)) {
+ 		int timer_index;
+ 
+-		napi_complete_done(napi, work_done);
++		napi_complete(napi);
+ 		timer_index = G_QINTR_TIMER_IDX(q->next_intr_params);
+ 
+ 		if (q->adaptive_rx) {
+diff -r 30 src/network/cxgb4/t4_hw.c
+--- a/src/network/cxgb4/t4_hw.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/t4_hw.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -8293,8 +8293,9 @@
+ 		adapter->params.arch.cng_ch_bits_log = 2;
+ 	} else if (is_t6(adapter->params.chip)) {
+ 		adapter->params.arch.sge_fl_db = 0;
++		/* For T6, we reserve last 2 entries for MATCHALL mac */
+ 		adapter->params.arch.mps_tcam_size =
+-				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
++				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES - 2;
+ 		adapter->params.arch.mps_rplc_size = 256;
+ 		adapter->params.arch.nchan = 2;
+ 		adapter->params.arch.pm_stats_cnt = T6_PM_NSTATS;
+@@ -8872,7 +8873,6 @@
+ 		p->lport = j;
+ 		p->rss_size = rss_size;
+ 		t4_os_set_hw_addr(adap, i, addr);
+-		adap->port[i]->dev_port = j;
+ 
+ 		ret = be32_to_cpu(c.u.info.lstatus_to_modtype);
+ 		p->mdio_addr = (ret & F_FW_PORT_CMD_MDIOCAP) ?
+diff -r 30 src/network/cxgb4/t4_linux_debugfs.c
+--- a/src/network/cxgb4/t4_linux_debugfs.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4/t4_linux_debugfs.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -2692,12 +2692,20 @@
+ 	.release = single_release,
+ };
+ 
++static void set_debugfs_file_size(struct dentry *de, loff_t size)
++{
++	if (!IS_ERR(de) && de->d_inode)
++		de->d_inode->i_size = size;
++}
++
+ static void add_debugfs_mem(struct adapter *adap, const char *name,
+ 				      unsigned int idx, unsigned int size_mb)
+ {
+-	debugfs_create_file_size(name, S_IRUSR, adap->debugfs_root,
+-				 (void *)adap + idx, &mem_debugfs_fops,
+-				 size_mb << 20);
++	struct dentry *de;
++
++	de = debugfs_create_file(name, S_IRUSR, adap->debugfs_root,
++				 (void *)adap + idx, &mem_debugfs_fops);
++	set_debugfs_file_size(de, size_mb << 20);
+ }
+ 
+ /*
+@@ -2822,8 +2830,9 @@
+ 					A_MA_EXT_MEMORY_BAR)));
+ 	}
+ 
+-	de = debugfs_create_file_size("flash", S_IRUSR, adap->debugfs_root, adap,
+-				 &flash_debugfs_fops, adap->params.sf_size);
++	de = debugfs_create_file("flash", S_IRUSR, adap->debugfs_root, adap,
++				 &flash_debugfs_fops);
++	set_debugfs_file_size(de, adap->params.sf_size);
+ 	debugfs_create_bool("use_backdoor", S_IWUSR | S_IRUSR,
+ 			    adap->debugfs_root, &adap->use_bd);
+ 
+@@ -2834,8 +2843,9 @@
+ 	if (adap->dma_virt) {
+ 		printk("DMA buffer at bus address %#llx, virtual 0x%p\n",
+ 			(unsigned long long)adap->dma_phys, adap->dma_virt);
+-		de = debugfs_create_file_size("dmabuf", 0644, adap->debugfs_root,
+-					 adap, &dma_debugfs_fops, DMABUF_SZ);
++		de = debugfs_create_file("dmabuf", 0644, adap->debugfs_root,
++					 adap, &dma_debugfs_fops);
++		set_debugfs_file_size(de, DMABUF_SZ);
+ 	}
+ #endif
+ 
+diff -r 30 src/network/cxgb4vf/adapter.h
+--- a/src/network/cxgb4vf/adapter.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4vf/adapter.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -423,8 +423,9 @@
+ 	#define T4VF_OS_LOG_MBOX_CMDS 256
+ 	struct mbox_cmd_log *mbox_log;
+ 
+-	/* list of MAC addresses in MPS Hash */
+-	struct list_head mac_hlist;
++	u8 mac_addr[512][ETH_ALEN];
++	unsigned int mac_count;
++	struct list_head mac_hlist; /* list of MAC addresses in MPS Hash */
+ };
+ 
+ enum { /* adapter flags */
+@@ -541,6 +542,7 @@
+ 				     u8 hw_addr[])
+ {
+ 	memcpy(adapter->port[pidx]->dev_addr, hw_addr, ETH_ALEN);
++	memcpy(adapter->port[pidx]->perm_addr, hw_addr, ETH_ALEN);
+ }
+ 
+ /**
+diff -r 30 src/network/cxgb4vf/cxgb4vf_compat.h
+--- a/src/network/cxgb4vf/cxgb4vf_compat.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4vf/cxgb4vf_compat.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -256,6 +256,24 @@
+ }
+ #endif
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0) && !defined(RHEL_RELEASE_7_1) \
++    && !defined(RHEL_RELEASE_6_7) && !defined(SLES_RELEASE_11_4)
++static inline void ether_addr_copy(u8 *dst, const u8 *src)
++{
++#if defined(CONFIG_HAVE_EFFICIENT_UNALIGNED_ACCESS)
++	*(u32 *)dst = *(const u32 *)src;
++	*(u16 *)(dst + 4) = *(const u16 *)(src + 4);
++#else
++	u16 *a = (u16 *)dst;
++	const u16 *b = (const u16 *)src;
++
++	a[0] = b[0];
++	a[1] = b[1];
++	a[2] = b[2];
++#endif
++}
++#endif
++
+ #ifndef smp_mb__after_atomic
+ #define smp_mb__after_atomic()  smp_mb()
+ #endif
+diff -r 30 src/network/cxgb4vf/cxgb4vf_main.c
+--- a/src/network/cxgb4vf/cxgb4vf_main.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/cxgb4vf/cxgb4vf_main.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -863,74 +863,145 @@
+ 	return ns;
+ }
+ 
+-static inline int cxgb4vf_set_addr_hash(struct port_info *pi)
++static int cxgb4vf_dev_add_addr(struct net_device *netdev, const u8 *mac_addr,
++			      u64 *hash)
+ {
++	struct port_info *pi = netdev_priv(netdev);
++	bool free = false;
++	const u8 *maclist[1] = {mac_addr};
++
++	return t4vf_alloc_mac_filt(pi->adapter, pi->viid, free, 1, maclist,
++				   NULL, hash, false);
++}
++
++static int cxgb4vf_dev_del_addr(struct net_device *netdev, const u8 *mac_addr)
++{
++	struct port_info *pi = netdev_priv(netdev);
++	int ret;
++	const u8 *maclist[1] = {mac_addr};
++
++	ret = t4vf_free_mac_filt(pi->adapter, pi->viid, 1, maclist, false);
++	return ret < 0 ? -EINVAL : 0;
++}
++
++/* Configure the exact and hash address filters to handle a port's multicast
++ * and secondary unicast MAC addresses.
++ */
++static int cxgb4vf_mac_sync(struct net_device *netdev)
++{
++	struct port_info *pi = netdev_priv(netdev);
+ 	struct adapter *adapter = pi->adapter;
++	struct netdev_hw_addr *ha;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
++	const struct dev_addr_list *da;
++#endif
++	unsigned int uc_count = netdev_uc_count(netdev);
++	unsigned int mc_count = netdev_mc_count(netdev);
++	unsigned int mac_count = uc_count + mc_count;
++	unsigned int max_naddr = adapter->params.arch.mps_tcam_size;
++	u8 (*mac_addr)[ETH_ALEN];
++	struct hash_mac_addr *entry, *new_entry, *tmp;
++	unsigned int i, j;
++	u64 hash = 0;
+ 	u64 vec = 0;
+ 	bool ucast = false;
+-	struct hash_mac_addr *entry;
++
++	mac_addr = kzalloc(sizeof(*mac_addr) * mac_count, GFP_ATOMIC);
++	if (!mac_addr)
++		return -ENOMEM;
++
++	if (mac_count > max_naddr) {
++		netdev_warn(netdev, "Registering only %d out of %d "
++			    "mac addresses\n",
++			    max_naddr, mac_count);
++		mac_count = max_naddr;
++	}
++
++	/* Is there an easier way?  Trying to minimize to
++	 * calls to add/del unicast addrs.  We keep the
++	 * addrs from the last call in adapter->uc_addr and
++	 * look for changes to add/del.
++	 */
++	i = 0;
++	netdev_for_each_uc_addr(ha, netdev) {
++		if (i == uc_count)
++			break;
++		ether_addr_copy(mac_addr[i++], ha->addr);
++	}
++
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
++	for (da = netdev->mc_list; da; da = da->next) {
++		if (i == mc_count)
++			break;
++		ether_addr_copy(mac_addr[i++], da->dmi_addr);
++#else
++	netdev_for_each_mc_addr(ha, netdev) {
++		if (i == mc_count)
++			break;
++		ether_addr_copy(mac_addr[i++], ha->addr);
++#endif
++	}
++
++	for (i = 0; i < adapter->mac_count; i++) {
++		for (j = 0; j < mac_count; j++)
++			if (ether_addr_equal(adapter->mac_addr[i], mac_addr[j]))
++				break;
++		if (j == mac_count) {
++			cxgb4vf_dev_del_addr(netdev, adapter->mac_addr[i]);
++			/* If the MAC address to be removed is in the hash addr
++			 * list, delete it from the list
++			 */
++			list_for_each_entry_safe(entry, tmp,
++						 &adapter->mac_hlist, list) {
++				if (ether_addr_equal(entry->addr,
++						     adapter->mac_addr[i])) {
++					list_del(&entry->list);
++					kfree(entry);
++				}
++			}
++		}
++	}
++
++	for (i = 0; i < mac_count; i++) {
++		for (j = 0; j < adapter->mac_count; j++)
++			if (ether_addr_equal(mac_addr[i], adapter->mac_addr[j]))
++				break;
++		if (j == adapter->mac_count) {
++			/* if hash != 0, then add the addr to hash addr list
++			 * so on the end we will calculate the hash for the
++			 * list and program it
++			 */
++			if (!cxgb4vf_dev_add_addr(netdev, mac_addr[i], &hash)) {
++				if (hash > 0) {
++					new_entry = kzalloc(sizeof(*new_entry),
++							    GFP_ATOMIC);
++					if (!new_entry)
++						return -ENOMEM;
++					ether_addr_copy(new_entry->addr,
++							mac_addr[j]);
++					list_add_tail(&new_entry->list,
++						      &adapter->mac_hlist);
++				}
++			}
++		}
++	}
+ 
+ 	/* Calculate the hash vector for the updated list and program it */
+ 	list_for_each_entry(entry, &adapter->mac_hlist, list) {
+ 		ucast |= is_unicast_ether_addr(entry->addr);
+ 		vec |= (1ULL << hash_mac_addr(entry->addr));
+ 	}
+-	return t4vf_set_addr_hash(adapter, pi->viid, ucast, vec, false);
+-}
+-
+-static int cxgb4vf_mac_sync(struct net_device *netdev, const u8 *mac_addr)
+-{
+-	struct port_info *pi = netdev_priv(netdev);
+-	struct adapter *adapter = pi->adapter;
+-	int ret;
+-	u64 mhash = 0;
+-	u64 uhash = 0;
+-	bool free = false;
+-	bool ucast = is_unicast_ether_addr(mac_addr);
+-	const u8 *maclist[1] = {mac_addr};
+-	struct hash_mac_addr *new_entry;
+-
+-	ret = t4vf_alloc_mac_filt(adapter, pi->viid, free, 1, maclist,
+-				  NULL, ucast ? &uhash : &mhash, false);
+-	if (ret < 0)
+-		goto out;
+-	/* if hash != 0, then add the addr to hash addr list
+-	 * so on the end we will calculate the hash for the
+-	 * list and program it
+-	 */
+-	if (uhash || mhash) {
+-		new_entry = kzalloc(sizeof(*new_entry), GFP_ATOMIC);
+-		if (!new_entry)
+-			return -ENOMEM;
+-		ether_addr_copy(new_entry->addr, mac_addr);
+-		list_add_tail(&new_entry->list, &adapter->mac_hlist);
+-		ret = cxgb4vf_set_addr_hash(pi);
+-	}
+-out:
+-	return ret < 0 ? ret : 0;
+-}
+-
+-static int cxgb4vf_mac_unsync(struct net_device *netdev, const u8 *mac_addr)
+-{
+-	struct port_info *pi = netdev_priv(netdev);
+-	struct adapter *adapter = pi->adapter;
+-	int ret;
+-	const u8 *maclist[1] = {mac_addr};
+-	struct hash_mac_addr *entry, *tmp;
+-
+-	/* If the MAC address to be removed is in the hash addr
+-	 * list, delete it from the list and update hash vector
+-	 */
+-	list_for_each_entry_safe(entry, tmp, &adapter->mac_hlist, list) {
+-		if (ether_addr_equal(entry->addr, mac_addr)) {
+-			list_del(&entry->list);
+-			kfree(entry);
+-			return cxgb4vf_set_addr_hash(pi);
+-		}
+-	}
+-
+-	ret = t4vf_free_mac_filt(adapter, pi->viid, 1, maclist, false);
+-	return ret < 0 ? -EINVAL : 0;
++	t4vf_set_addr_hash(adapter, pi->viid, ucast != 0,
++			   vec, false);
++
++	/* Save the list to compare against next time
++	*/
++	for (i = 0; i < mac_count; i++)
++		ether_addr_copy(adapter->mac_addr[i], mac_addr[i]);
++
++	adapter->mac_count = mac_count;
++	kfree(mac_addr);
++	return 0;
+ }
+ 
+ /*
+@@ -939,19 +1010,17 @@
+  */
+ static int set_rxmode(struct net_device *dev, int mtu, bool sleep_ok)
+ {
+-	int ret;
++	int ret = 0;
+ 	struct port_info *pi = netdev_priv(dev);
+ 
+-	if (!(dev->flags & IFF_PROMISC)) {
+-		__dev_uc_sync(dev, cxgb4vf_mac_sync, cxgb4vf_mac_unsync);
+-		if (!(dev->flags & IFF_ALLMULTI))
+-			__dev_mc_sync(dev, cxgb4vf_mac_sync,
+-				      cxgb4vf_mac_unsync);
+-	}
+-	return t4vf_set_rxmode(pi->adapter, pi->viid, -1,
+-			       (dev->flags & IFF_PROMISC) != 0,
+-			       (dev->flags & IFF_ALLMULTI) != 0,
+-			       1, -1, sleep_ok);
++	if (!(dev->flags & IFF_PROMISC))
++		ret = cxgb4vf_mac_sync(dev);
++
++	if (ret == 0)
++		ret = t4vf_set_rxmode(pi->adapter, pi->viid, -1,
++				      (dev->flags & IFF_PROMISC) != 0,
++				      (dev->flags & IFF_ALLMULTI) != 0,
++				      1, -1, sleep_ok);
+ 	return ret;
+ }
+ 
+diff -r 30 src/network/include/cxgb4_ofld.h
+--- a/src/network/include/cxgb4_ofld.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/include/cxgb4_ofld.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -427,8 +427,7 @@
+ 	int (*control)(void *handle, enum cxgb4_control control, ...);
+ 	int (*lro_rx_handler)(void *handle, const __be64 *rsp,
+ 			      const struct pkt_gl *gl,
+-			      struct t4_lro_mgr *lro_mgr,
+-			      struct napi_struct *napi);
++			      struct t4_lro_mgr *lro_mgr, unsigned int napi_id);
+ 	void (*lro_flush)(struct t4_lro_mgr *);
+ };
+ 
+@@ -458,8 +457,7 @@
+ int cxgb4_set_params(struct net_device *dev, unsigned int nparams,
+ 		     const u32 *params, const u32 *val);
+ u64 cxgb4_read_sge_timestamp(struct net_device *dev);
+-struct sk_buff *cxgb4_pktgl_to_skb(struct napi_struct *napi,
+-				   const struct pkt_gl *gl,
++struct sk_buff *cxgb4_pktgl_to_skb(const struct pkt_gl *gl,
+ 				   unsigned int skb_len, unsigned int pull_len);
+ 
+ enum cxgb4_bar2_qtype { CXGB4_BAR2_QTYPE_EGRESS, CXGB4_BAR2_QTYPE_INGRESS };
+diff -r 30 src/network/iw_cxgb4/cm.c
+--- a/src/network/iw_cxgb4/cm.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/iw_cxgb4/cm.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -434,6 +434,7 @@
+ 	if (test_bit(QP_REFERENCED, &ep->com.flags))
+ 		deref_qp(ep);
+ 	if (test_bit(RELEASE_RESOURCES, &ep->com.flags)) {
++#ifdef IWARP_IWPM_SUPPORT
+ 		if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 			struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)
+ 						    &ep->com.mapped_local_addr;
+@@ -442,9 +443,15 @@
+ 					(const u32 *)&sin6->sin6_addr.s6_addr,
+ 					1);
+ 		}
++#endif
+ 		if (ep->hwtid != -1)
+ 			cxgb4_remove_tid(ep->com.dev->rdev.lldi.tids, 0,
++#ifdef IWARP_IPV6_SUPPORT
+ 				ep->hwtid, ep->com.local_addr.ss_family);
++#else
++				ep->hwtid, AF_INET);
++#endif
++			
+ 		if (ep->dst)
+ 			dst_release(ep->dst);
+ 		if (ep->l2t)
+@@ -668,12 +675,14 @@
+ 	printk(KERN_ERR MOD "ARP failure during connect\n");
+ 	connect_reply_upcall(ep, -EHOSTUNREACH);
+ 	__state_set(&ep->com, DEAD);
++#ifdef IWARP_IWPM_SUPPORT
+ 	if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)
+ 					    &ep->com.mapped_local_addr;
+ 		cxgb4_clip_release(ep->com.dev->rdev.lldi.ports[0],
+ 				   (const u32 *)&sin6->sin6_addr.s6_addr, 1);
+ 	}
++#endif
+ 	remove_handle(ep->com.dev, &ep->com.dev->atid_idr, ep->atid);
+ 	cxgb4_free_atid(ep->com.dev->rdev.lldi.tids, ep->atid);
+ 	queue_arp_failure_cpl(ep, skb, FAKE_CPL_PUT_EP_SAFE);
+@@ -995,12 +1004,14 @@
+ 	if (wscale && enable_tcp_window_scaling)
+ 		opt2 |= F_WND_SCALE_EN;
+ 
++#ifdef IWARP_IWPM_SUPPORT
+ 	if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 		ret = cxgb4_clip_get(ep->com.dev->rdev.lldi.ports[0],
+ 				(const u32 *)&la6->sin6_addr.s6_addr, 1);
+ 		if (ret)
+ 			return ret;
+ 	}
++#endif
+ 
+ 	t4_set_arp_err_handler(skb, ep, act_open_req_arp_failure);
+ 
+@@ -1174,9 +1185,11 @@
+ #endif
+ 	set_bit(ACT_OPEN_REQ, &ep->com.history);
+ 	ret = c4iw_l2t_send(&ep->com.dev->rdev, skb, ep);
++#ifdef IWARP_IWPM_SUPPORT
+ 	if (ret && ep->com.remote_addr.ss_family == AF_INET6)
+ 		cxgb4_clip_release(ep->com.dev->rdev.lldi.ports[0],
+ 				   (const u32 *)&la6->sin6_addr.s6_addr, 1);
++#endif
+ 	return ret;
+ }
+ 
+@@ -1460,7 +1473,11 @@
+ 
+ 	/* setup the hwtid for this connection */
+ 	ep->hwtid = tid;
++#ifdef IWARP_IPV6_SUPPORT
+ 	cxgb4_insert_tid(t, ep, tid, ep->com.local_addr.ss_family);
++#else
++	cxgb4_insert_tid(t, ep, tid, AF_INET);
++#endif
+ 	insert_ep_tid(ep);
+ 
+ 	ep->snd_seq = be32_to_cpu(req->snd_isn);
+@@ -2576,6 +2593,7 @@
+ 	case CPL_ERR_CONN_EXIST:
+ 		if (ep->retry_count++ < ACT_OPEN_RETRY_COUNT) {
+ 			set_bit(ACT_RETRY_INUSE, &ep->com.history);
++#ifdef IWARP_IWPM_SUPPORT
+ 			if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 				struct sockaddr_in6 *sin6 =
+ 						(struct sockaddr_in6 *)
+@@ -2585,6 +2603,7 @@
+ 					(const u32 *)
+ 					&sin6->sin6_addr.s6_addr, 1);
+ 			}
++#endif
+ 			remove_handle(ep->com.dev, &ep->com.dev->atid_idr,
+ 				      atid);
+ 			cxgb4_free_atid(t, atid);
+@@ -2625,16 +2644,22 @@
+ 	connect_reply_upcall(ep, status2errno(status));
+ 	state_set(&ep->com, DEAD);
+ 
++#ifdef IWARP_IWPM_SUPPORT
+ 	if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 		struct sockaddr_in6 *sin6 =(struct sockaddr_in6 *)
+ 			&ep->com.mapped_local_addr;
+ 		cxgb4_clip_release(ep->com.dev->rdev.lldi.ports[0],
+ 				(const u32 *)&sin6->sin6_addr.s6_addr, 1);
+ 	}
++#endif
+ 
+ 	if (status && act_open_has_tid(status))
+ 		cxgb4_remove_tid(ep->com.dev->rdev.lldi.tids, 0, GET_TID(rpl),
++#ifdef IWARP_IPV6_SUPPORT
+ 				 ep->com.local_addr.ss_family);
++#else
++				 AF_INET);
++#endif
+ 
+ 	remove_handle(ep->com.dev, &ep->com.dev->atid_idr, atid);
+ 	cxgb4_free_atid(t, atid);
+@@ -2849,7 +2874,6 @@
+ 	struct l2t_entry *l2t;
+ 	__u8 local_ip[16], peer_ip[16];
+ 	__be16 local_port, peer_port;
+-	struct sockaddr_in6 *sin6;
+ 	struct port_info *pi;
+ 	struct net_device *pdev;
+ 	u32 tx_chan, smac_idx;
+@@ -2857,12 +2881,19 @@
+ 	u32 mtu;
+ 	int step;
+ 	int txq_idx, ctrlq_idx;
++#ifdef IWARP_IWPM_SUPPORT
+ 	int ret;
++#endif
+ 	u16 peer_mss = ntohs(req->tcpopt.mss);
+ 	int iptype;
+ 	struct neighbour *neigh = NULL;
+ 	unsigned short hdrs;
+ 	u8 tos = G_PASS_OPEN_TOS(ntohl(req->tos_stid));
++#ifdef IWARP_IPV6_SUPPORT
++	struct sockaddr_in6 *sin6;
++#else
++	struct sockaddr_in *sin;
++#endif
+ 
+ 	parent_ep = (struct c4iw_ep *)get_ep_from_stid(dev, stid);
+ 	if (!parent_ep) {
+@@ -3034,8 +3065,7 @@
+ 		memcpy(sin6->sin6_addr.s6_addr, peer_ip, 16);
+ 	}
+ #else
+-	struct sockaddr_in *sin = (struct sockaddr_in *)
+-		&child_ep->com.local_addr;
++	sin = (struct sockaddr_in *)&child_ep->com.local_addr;
+ 	sin->sin_family = PF_INET;
+ 	sin->sin_port = local_port;
+ 	sin->sin_addr.s_addr = *(__be32 *)local_ip;
+@@ -3067,13 +3097,18 @@
+ 	     tx_chan, smac_idx, rss_qid);
+ 
+ 	init_timer(&child_ep->timer);
++#ifdef IWARP_IPV6_SUPPORT
+ 	cxgb4_insert_tid(t, child_ep, hwtid, child_ep->com.local_addr.ss_family);
++#else
++	cxgb4_insert_tid(t, child_ep, hwtid, AF_INET);
++#endif
+ 	insert_ep_tid(child_ep);
+ 	if (accept_cr(child_ep, skb, req)) {
+ 		c4iw_put_ep(&parent_ep->com);
+ 		release_ep_resources(child_ep);
+ 	} else {
+ 		set_bit(PASS_ACCEPT_REQ, &child_ep->com.history);
++#ifdef IWARP_IWPM_SUPPORT
+ 		if (iptype == 6) {
+ 			sin6 = (struct sockaddr_in6 *)
+ 				&child_ep->com.mapped_local_addr;
+@@ -3082,6 +3117,7 @@
+ 			if (ret)
+ 				goto fail;
+ 		}
++#endif
+ 	}
+ 	goto out;
+ fail:
+@@ -3373,6 +3409,7 @@
+ 	if (release)
+ 		release_ep_resources(ep);
+ 	else if (ep->retry_with_mpa_v1) {
++#ifdef IWARP_IWPM_SUPPORT
+ 		if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 			struct sockaddr_in6 *sin6 =(struct sockaddr_in6 *)
+ 				&ep->com.mapped_local_addr;
+@@ -3380,9 +3417,14 @@
+ 					(const u32 *)&sin6->sin6_addr.s6_addr,
+ 					1);
+ 		}
++#endif
+ 		remove_handle(ep->com.dev, &ep->com.dev->hwtid_idr, ep->hwtid);
+ 		cxgb4_remove_tid(ep->com.dev->rdev.lldi.tids, 0, ep->hwtid,
++#ifdef IWARP_IPV6_SUPPORT
+ 				 ep->com.local_addr.ss_family);
++#else
++				 AF_INET);
++#endif
+ 		dst_release(ep->dst);
+ 		cxgb4_l2t_release(ep->l2t);
+ 		c4iw_reconnect(ep);
+@@ -3971,6 +4013,13 @@
+ #ifdef IWARP_IWPM_SUPPORT
+ 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)
+ 					&ep->com.mapped_local_addr;
++
++	if (ipv6_addr_type(&sin6->sin6_addr) != IPV6_ADDR_ANY) {
++		err = cxgb4_clip_get(ep->com.dev->rdev.lldi.ports[0],
++				     (const u32 *)&sin6->sin6_addr.s6_addr, 1);
++		if (err)
++			return err;
++	}
+ #else
+ 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)
+ 					&ep->com.local_addr;
+@@ -3986,8 +4035,8 @@
+ 					  0, 0, __func__);
+ 	if (err)
+ 		pr_err("cxgb4_create_server6/filter failed err %d stid %d"
+-		       " laddr %pI6 lport %d\n", err, ep->stid,
+-		       sin6->sin6_addr.s6_addr, ntohs(sin6->sin6_port));
++			" laddr %pI6 lport %d\n", err, ep->stid,
++			sin6->sin6_addr.s6_addr, ntohs(sin6->sin6_port));
+ 	else {
+ 		if (ipv6_addr_type(&sin6->sin6_addr) != IPV6_ADDR_ANY) {
+ 			ret = cxgb4_clip_get(ep->com.dev->rdev.lldi.ports[0],
+@@ -4179,7 +4228,9 @@
+ 				ep->com.dev->rdev.lldi.ports[0], ep->stid,
+ 				ep->com.dev->rdev.lldi.rxq_ids[0], 0);
+ 	} else {
++#ifdef IWARP_IWPM_SUPPORT
+ 		struct sockaddr_in6 *sin6;
++#endif
+ 		c4iw_init_wr_wait(&ep->com.wr_wait);
+ 		err = cxgb4_remove_server(
+ 				ep->com.dev->rdev.lldi.ports[0], ep->stid,
+@@ -4188,13 +4239,15 @@
+ 			goto done;
+ 		err = c4iw_wait_for_reply(&ep->com.dev->rdev, &ep->com.wr_wait,
+ 				0, 0, __func__);
++#ifdef IWARP_IWPM_SUPPORT
+ 		sin6 = (struct sockaddr_in6 *)&ep->com.mapped_local_addr;
+ 		if (ipv6_addr_type(&sin6->sin6_addr) != IPV6_ADDR_ANY) {
+ 			cxgb4_clip_release(ep->com.dev->rdev.lldi.ports[0],
+ 					(const u32 *)&sin6->sin6_addr.s6_addr,
+ 					1);
+ 		}
+-	}
++#endif
++ 	}
+ 	remove_handle(ep->com.dev, &ep->com.dev->stid_idr, ep->stid);
+ 	cxgb4_free_stid(ep->com.dev->rdev.lldi.tids, ep->stid,
+ #ifdef IWARP_IPV6_SUPPORT
+@@ -4351,12 +4404,14 @@
+ 	mutex_unlock(&dev->rdev.stats.lock);
+ 	connect_reply_upcall(ep, status2errno(req->retval));
+ 	state_set(&ep->com, DEAD);
++#ifdef IWARP_IWPM_SUPPORT
+ 	if (ep->com.remote_addr.ss_family == AF_INET6) {
+ 		struct sockaddr_in6 *sin6 =(struct sockaddr_in6 *)
+ 			&ep->com.mapped_local_addr;
+ 		cxgb4_clip_release(ep->com.dev->rdev.lldi.ports[0],
+ 				(const u32 *)&sin6->sin6_addr.s6_addr, 1);
+ 	}
++#endif
+ 	remove_handle(dev, &dev->atid_idr, atid);
+ 	cxgb4_free_atid(dev->rdev.lldi.tids, atid);
+ 	dst_release(ep->dst);
+diff -r 30 src/network/iw_cxgb4/device.c
+--- a/src/network/iw_cxgb4/device.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/iw_cxgb4/device.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -633,6 +633,12 @@
+ 	struct c4iw_debugfs_data *epd = data;
+ 	int space;
+ 	int cc;
++#ifndef IWARP_IPV6_SUPPORT
++	struct sockaddr_in *lsin = (struct sockaddr_in *)
++		&ep->com.local_addr;
++	struct sockaddr_in *rsin = (struct sockaddr_in *)
++		&ep->com.remote_addr;
++#endif
+ 
+ 	space = epd->bufsize - epd->pos - 1;
+ 	if (space == 0)
+@@ -656,7 +662,7 @@
+ #ifdef IWARP_IWPM_SUPPORT
+ 			      "%pI4:%d/%d <-> %pI4:%d/%d\n",
+ #else
+-			      "%pI4:%d <-> %pI4:%d\n",
++ 			      "%pI4:%d <-> %pI4:%d\n",
+ #endif
+ 			      ep, ep->com.cm_id, ep->com.qp,
+ 			      (int)ep->com.state, ep->com.flags,
+@@ -702,13 +708,9 @@
+ #endif
+ 	}
+ #else
+-	struct sockaddr_in *lsin = (struct sockaddr_in *)
+-		&ep->com.local_addr;
+-	struct sockaddr_in *rsin = (struct sockaddr_in *)
+-		&ep->com.remote_addr;
+ 	cc = snprintf(epd->buf + epd->pos, space,
+-		      "ep %p cm_id %p qp %p state %d flags 0x%lx "
+-		      "history 0x%lx hwtid %d atid %d "
++		      "ep %p cm_id %p qp %p state %d flags 0x%lx"
++		      "history 0x%lx hwtid %d atid %d"
+ 		      "%pI4:%d <-> %pI4:%d\n",
+ 		      ep, ep->com.cm_id, ep->com.qp,
+ 		      (int)ep->com.state, ep->com.flags,
+@@ -728,6 +730,10 @@
+ 	struct c4iw_debugfs_data *epd = data;
+ 	int space;
+ 	int cc;
++#ifndef IWARP_IPV6_SUPPORT
++	struct sockaddr_in *lsin = (struct sockaddr_in *)
++		&ep->com.local_addr;
++#endif
+ 
+ 	space = epd->bufsize - epd->pos - 1;
+ 	if (space == 0)
+@@ -781,10 +787,8 @@
+ #endif
+ 	}
+ #else
+-	struct sockaddr_in *lsin = (struct sockaddr_in *)
+-		&ep->com.local_addr;
+ 	cc = snprintf(epd->buf + epd->pos, space,
+-			"ep %p cm_id %p state %d flags 0x%lx stid %d "
++			"ep %p cm_id %p state %d flags 0x%lx stid %d\n"
+ 			"backlog %d %pI4:%d\n",
+ 			ep, ep->com.cm_id, (int)ep->com.state,
+ 			ep->com.flags, ep->stid, ep->backlog,
+diff -r 30 src/network/iw_cxgb4/iw_cxgb4.h
+--- a/src/network/iw_cxgb4/iw_cxgb4.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/iw_cxgb4/iw_cxgb4.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -492,6 +492,12 @@
+ 	struct sk_buff *dereg_skb;
+ 	u64 kva;
+ 	struct tpt_attributes attr;
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	atomic_t invalidated;
++	struct completion invalidation_comp;
++	struct mutex live_lock;
++	int live;
++#endif
+ };
+ 
+ static inline struct c4iw_mr *to_c4iw_mr(struct ib_mr *ibmr)
+@@ -505,6 +511,12 @@
+ 	struct sk_buff *dereg_skb;
+ 	u64 kva;
+ 	struct tpt_attributes attr;
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	atomic_t invalidated;
++	struct completion invalidation_comp;
++	struct mutex live_lock;
++	int live;
++#endif
+ };
+ 
+ static inline struct c4iw_mw *to_c4iw_mw(struct ib_mw *ibmw)
+diff -r 30 src/network/iw_cxgb4/mem.c
+--- a/src/network/iw_cxgb4/mem.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/iw_cxgb4/mem.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -860,6 +860,56 @@
+ #endif
+ }
+ 
++#ifdef PEER_DIRECT_MEM_SUPPORT
++static void release_mr_resources(struct c4iw_mr *mr)
++{
++	struct c4iw_dev *dev = mr->rhp;
++	u32 mmid;
++
++	mmid = mr->attr.stag >> 8;
++	remove_handle(dev, &dev->mmidr, mmid);
++	dereg_mem(&dev->rdev, mr->attr.stag, mr->attr.pbl_size,
++		  mr->attr.pbl_addr, mr->dereg_skb);
++	if (mr->attr.pbl_size)
++		c4iw_pblpool_free(&mr->rhp->rdev, mr->attr.pbl_addr,
++				  mr->attr.pbl_size << 3);
++	if (mr->kva)
++		kfree((void *) (unsigned long) mr->kva);
++	if (mr->umem)
++		ib_umem_release(mr->umem);
++	PDBG("%s mmid 0x%x ptr %p\n", __func__, mmid, mr);
++	return;
++}
++
++static void invalidate_umem(void *invalidation_cookie,struct ib_umem *umem,
++			    unsigned long addr, size_t size)
++{
++	struct c4iw_mr *mr = (struct c4iw_mr *)invalidation_cookie;
++
++	mutex_lock(&mr->live_lock);
++
++	/*
++	 * This function is called under client peer lock so its resources are
++	 * race protected.
++	 */
++	if (atomic_inc_return(&mr->invalidated) > 1) {
++		umem->invalidation_ctx->inflight_invalidation = 1;
++		mutex_unlock(&mr->live_lock);
++		return;
++	}
++
++	if (!mr->live) {
++		mutex_unlock(&mr->live_lock);
++		return;
++	}
++
++	mutex_unlock(&mr->live_lock);
++	umem->invalidation_ctx->peer_callback = 1;
++	release_mr_resources(mr);
++	complete(&mr->invalidation_comp);
++}
++#endif
++
+ struct ib_mr *c4iw_reg_user_mr(struct ib_pd *pd, u64 start, u64 length,
+ 			       u64 virt, int acc, struct ib_udata *udata)
+ {
+@@ -877,6 +927,9 @@
+ 	struct c4iw_dev *rhp;
+ 	struct c4iw_pd *php;
+ 	struct c4iw_mr *mhp;
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	struct ib_peer_memory_client *ib_peer_mem;
++#endif
+ 	__u64 usr_pbl, *raw_pbl;
+ 	__u64 __user *usr_pbl_ptr;
+ 	int npages;
+@@ -912,9 +965,17 @@
+ 		return ERR_PTR(-ENOMEM);
+ 	}
+ 
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	mutex_init(&mhp->live_lock);
++#endif
+ 	mhp->rhp = rhp;
+ 
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	mhp->umem = ib_umem_get(pd->uobject->context, start, length, acc, 0,
++				IB_PEER_MEM_ALLOW | IB_PEER_MEM_INVAL_SUPP);
++#else
+ 	mhp->umem = ib_umem_get(pd->uobject->context, start, length, acc, 0);
++#endif
+ 	if (IS_ERR(mhp->umem)) {
+ 		err = PTR_ERR(mhp->umem);
+ 		kfree_skb(mhp->dereg_skb);
+@@ -922,6 +983,28 @@
+ 		return ERR_PTR(err);
+ 	}
+ 
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	ib_peer_mem = mhp->umem->ib_peer_mem;
++	if (ib_peer_mem) {
++		err = ib_umem_activate_invalidation_notifier(mhp->umem,
++				invalidate_umem, mhp);
++		if (err)
++			goto err;
++	}
++
++	mutex_lock(&mhp->live_lock);
++	if (atomic_read(&mhp->invalidated))
++		goto err_unlock;
++
++	if (ib_peer_mem) {
++		if (acc & IB_ACCESS_MW_BIND) {
++			err = -ENOSYS;
++			goto err_unlock;
++		}
++		init_completion(&mhp->invalidation_comp);
++	}
++#endif
++
+ 	if (oldlib || !mhp->umem->hugetlb ||
+ 	    try_huge_pbl(rhp, mhp, start, virt, udata, &shift)) {
+ 
+@@ -937,7 +1020,11 @@
+ 
+ 		err = alloc_pbl(mhp, n);
+ 		if (err)
++#ifdef PEER_DIRECT_MEM_SUPPORT
++			goto err_unlock;
++#else
+ 			goto err;
++#endif
+ 
+ 		raw_pbl = (__u64 *) __get_free_page(GFP_KERNEL);
+ 		if (!raw_pbl)
+@@ -1019,6 +1106,10 @@
+ 		if (err)
+ 			goto err_pbl;
+ 	}
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	mhp->live = 1;
++	mutex_unlock(&mhp->live_lock);
++#endif
+ 	return &mhp->ibmr;
+ 
+ err_raw_pbl:
+@@ -1026,6 +1117,10 @@
+ err_pbl:
+ 	c4iw_pblpool_free(&mhp->rhp->rdev, mhp->attr.pbl_addr,
+ 			      mhp->attr.pbl_size << 3);
++#ifdef PEER_DIRECT_MEM_SUPPORT
++err_unlock:
++	mutex_unlock(&mhp->live_lock);
++#endif
+ err:
+ 	kfree_skb(mhp->dereg_skb);
+ 	ib_umem_release(mhp->umem);
+@@ -1204,9 +1299,13 @@
+ 
+ int c4iw_dereg_mr(struct ib_mr *ib_mr)
+ {
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	struct c4iw_mr *mhp;
++#else
+ 	struct c4iw_dev *rhp;
+ 	struct c4iw_mr *mhp;
+ 	u32 mmid;
++#endif
+ 
+ 	PDBG("%s ib_mr %p\n", __func__, ib_mr);
+ 	/* There can be no memory windows */
+@@ -1214,6 +1313,8 @@
+ 		return -EINVAL;
+ 
+ 	mhp = to_c4iw_mr(ib_mr);
++
++#ifndef PEER_DIRECT_MEM_SUPPORT
+ 	rhp = mhp->rhp;
+ 	mmid = mhp->attr.stag >> 8;
+ 	remove_handle(rhp, &rhp->mmidr, mmid);
+@@ -1227,6 +1328,20 @@
+ 	if (mhp->umem)
+ 		ib_umem_release(mhp->umem);
+ 	PDBG("%s mmid 0x%x ptr %p\n", __func__, mmid, mhp);
++#else
++	/*
++	 * If its invalidated or invalidating, then wait for that
++	 * to complete which deregisters the MR, and then just
++	 * free mhp.  Otherwise we do the invalidation here.
++	 */
++	if (atomic_inc_return(&mhp->invalidated) > 1) {
++		wait_for_completion(&mhp->invalidation_comp);
++		goto end;
++	}
++
++	release_mr_resources(mhp);
++end:
++#endif
+ 	kfree(mhp);
+ 	return 0;
+ }
+diff -r 30 src/network/iw_cxgb4/provider.c
+--- a/src/network/iw_cxgb4/provider.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/iw_cxgb4/provider.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -525,7 +525,13 @@
+ 	memset(&dev->ibdev.node_guid, 0, sizeof(dev->ibdev.node_guid));
+ 	memcpy(&dev->ibdev.node_guid, dev->rdev.lldi.ports[0]->dev_addr, 6);
+ 	dev->ibdev.owner = THIS_MODULE;
++#ifdef PEER_DIRECT_MEM_SUPPORT
++	dev->device_cap_flags = IB_DEVICE_LOCAL_DMA_LKEY |
++				IB_DEVICE_MEM_WINDOW |
++				IB_DEVICE_PEER_MEMORY;
++#else
+ 	dev->device_cap_flags = IB_DEVICE_LOCAL_DMA_LKEY | IB_DEVICE_MEM_WINDOW;
++#endif
+ 	if (fastreg_support)
+ 		dev->device_cap_flags |= IB_DEVICE_MEM_MGT_EXTENSIONS;
+ 	dev->ibdev.local_dma_lkey = 0;
+diff -r 30 src/network/t4_tom/Makefile
+--- a/src/network/t4_tom/Makefile	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/Makefile	Thu Apr 21 15:27:13 2016 +0530
+@@ -59,10 +59,6 @@
+   kversions += $(kseries)
+ endif
+ 
+-ifeq ($(shell echo $(kseries) | cut -d. -f1), 4)
+-  kversions += $(kseries)
+-endif
+-
+ obj-m := $(TARGET)
+ $(TARGET:.o=)-objs := $(CFILES:.c=.o)
+ 
+diff -r 30 src/network/t4_tom/cpl_io.c
+--- a/src/network/t4_tom/cpl_io.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/cpl_io.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -1217,8 +1217,38 @@
+ }
+ #endif
+ 
++static void t4_idiag_get_info(struct sock *sk, u32 ext, struct sk_buff *skb)
++{
++	struct cpl_io_state *cplios = CPL_IO_STATE(sk);
++#if DEBUG_WR
++	if (ext & (1 << (INET_DIAG_MEMINFO - 1))) {
++		bh_lock_sock(sk);
++		if (!sock_owned_by_user(sk))
++			dump_wrs(sk);
++		bh_unlock_sock(sk);
++	}
++#endif
++	if (ext & (1 << INET_DIAG_MAX)) {
++		struct rtattr *rta;
++		struct t4_inet_diag_info *info;
++
++		rta = __RTA_PUT(skb, INET_DIAG_MAX + 1, sizeof(*info));
++		info = RTA_DATA(rta);
++		info->toe_id = TOE_ID_CHELSIO_T4;
++		info->tid    = cplios->tid;
++		info->wr_credits  = cplios->wr_max_credits - cplios->wr_credits;
++		info->queue  = cplios->txq_idx;
++		info->ulp_mode = cplios->ulp_mode;
++		info->sched_class = cplios->sched_cls != SCHED_CLS_NONE ?
++				    cplios->sched_cls : 0;
++		info->ddp_enabled = DDP_STATE(sk)->ddp_setup;
++		strcpy(info->dev_name, cplios->toedev->name);
++rtattr_failure: ;
++	}
++}
++
+ #define T4_CONG_OPS(s) \
+-	{ .name = s, .owner = THIS_MODULE }
++	{ .name = s, .owner = THIS_MODULE, .get_info = t4_idiag_get_info }
+ 
+ static struct tcp_congestion_ops t4_cong_ops[] = {
+ 	T4_CONG_OPS("reno"),        T4_CONG_OPS("tahoe"),
+@@ -2056,7 +2086,11 @@
+ 	}
+ 
+ 	tp->ecn_flags = 0;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,0)
+ 	use_ecn = (tcp_ecn_enabled(sock_net(sk)) == 1) || tcp_ca_needs_ecn(sk);
++#else
++	use_ecn = (tcp_ecn_enabled(sock_net(sk)) == 1);
++#endif
+ 
+ 	if (!use_ecn) {
+ 		if (dst && dst_feature(dst, RTAX_FEATURE_ECN))
+@@ -3668,7 +3702,7 @@
+ {
+ 	struct request_sock *req = CPL_IO_STATE(child)->passive_reap_next;
+ 
+-	reqsk_queue_removed(&inet_csk(parent)->icsk_accept_queue, req);
++	inet_csk_reqsk_queue_removed(parent, req);
+ 	synq_remove(child);
+ 	t4_reqsk_free(req);
+ 	CPL_IO_STATE(child)->passive_reap_next = NULL;
+@@ -3991,13 +4025,10 @@
+ 	if (security_inet_conn_request(lsk, tcphdr_skb, oreq))
+ 		goto free_or;
+ #endif
+-	newsk = tcp_create_openreq_child(lsk, oreq, tcphdr_skb);
+-	if (!newsk)
+-		goto free_or;
+ 	if (lsk->sk_family == AF_INET) {
+-		dst = inet_csk_route_child_sock(lsk, newsk, oreq);
++		dst = route_req(lsk, oreq);
+ 		if (!dst)
+-			goto free_sk;
++			goto free_or;
+ 
+ 		tcph = (struct tcphdr *)(iph + 1);
+ 		neigh = t4_dst_neigh_lookup(dst, &iph->saddr);
+@@ -4037,7 +4068,7 @@
+ 
+ 		dst = ip6_dst_lookup_flow_compat(lsk, &fl6, NULL, false);
+ 		if (IS_ERR(dst))
+-			goto free_sk;
++			goto free_or;
+ 
+ 		neigh = t4_dst_neigh_lookup(dst, &ip6h->saddr);
+ 		if (neigh) {
+@@ -4069,8 +4100,14 @@
+ 	if (!newcplios)
+ 		goto free_l2t;
+ 	kref_init(&newcplios->kref);
++	newsk = tcp_create_openreq_child(lsk, oreq, tcphdr_skb);
++	if (!newsk) {
++		kfree(newcplios);
++		goto free_l2t;
++	}
++	CPL_IO_STATE(newsk) = newcplios;
+ 	newcplios->sk = newsk;
+-	CPL_IO_STATE(newsk) = newcplios;
++
+ 	if (sock_flag(newsk, SOCK_KEEPOPEN))
+ 		inet_csk_delete_keepalive_timer(newsk);
+ 
+@@ -4130,9 +4167,6 @@
+ 	cxgb4_l2t_release(e);	
+ free_dst:
+ 	dst_release(dst);
+-free_sk:
+-	inet_csk_prepare_forced_close(newsk);
+-	tcp_done(newsk);
+ free_or:
+ 	t4_reqsk_free(oreq);
+ out_err:
+@@ -4339,7 +4373,9 @@
+ 	struct net_device *master = NULL;
+ 	struct net_device *vlan_dev = NULL;
+ 	__u8 ip_dsfield; /* IPv4 tos or IPv6 dsfield */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,0)
+ 	bool th_ecn, ect, ecn_ok;
++#endif
+ 
+ 	rcu_read_lock();
+ 	/*
+@@ -4482,10 +4518,10 @@
+ 	}
+ 
+ 	if (iph->version == 0x4)
+-		oreq = inet_reqsk_alloc(&t4_rsk_ops, sk);
++		oreq = reqsk_alloc(&t4_rsk_ops);
+ #if defined(CONFIG_TCPV6_OFFLOAD)
+ 	else
+-		oreq = inet6_reqsk_alloc(&t4_rsk6_ops, sk);
++		oreq = inet6_reqsk_alloc(&t4_rsk6_ops);
+ #endif
+ 	if (!oreq)
+ 		goto reject;
+@@ -4525,11 +4561,7 @@
+                	inet_rsk(oreq)->wscale_ok = 1;
+                	inet_rsk(oreq)->snd_wscale = req->tcpopt.wsf;
+ 	}
+-
+-	/* Note: tcp_v6_init_req() might override ir_iif for link
+-	   locals */
+-	inet_rsk(oreq)->ir_iif = sk->sk_bound_dev_if;
+-
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,18,0)
+ 	th_ecn = tcph->ece && tcph->cwr;
+ 	if (th_ecn) {
+ 		ect = !INET_ECN_is_not_ect(ip_dsfield);
+@@ -4538,6 +4570,11 @@
+ 		if ((!ect && ecn_ok) || tcp_ca_needs_ecn(sk))
+ 			inet_rsk(oreq)->ecn_ok = 1;
+ 	}
++#else
++	if (tcp_ecn_enabled(sock_net(sk)) && tcph->ece && tcph->cwr &&
++	    INET_ECN_is_not_ect(ip_dsfield))
++		inet_rsk(oreq)->ecn_ok = 1;
++#endif
+ 
+ 	newsk = mk_pass_sock(sk, tdev, egress_dev, tid, req, network_hdr, oreq, &pass2host, &settings);
+ 	if (!newsk)
+@@ -4860,13 +4897,14 @@
+ 		skb->vlan_tci = ntohs(vlan_eh->h_vlan_TCI);
+ 		cpl->vlan = vlan_eh->h_vlan_TCI;
+ 	}
++
+ 	BUG_ON(iph->version != 0x4);
+ 	tos  = iph->tos;
+ 	tcph = (struct tcphdr *)(iph + 1);
+ 	skb_set_network_header(skb, (void *)iph - (void *)req);
+ 	skb_set_transport_header(skb, (void *)tcph - (void *)req);
+ 
+-	oreq = inet_reqsk_alloc(&t4_rsk_ops, lsk);
++	oreq = inet_reqsk_alloc(&t4_rsk_ops);
+ 	if (!oreq)
+ 		goto reject;
+ 
+@@ -4967,7 +5005,7 @@
+ 	oreq = CPL_IO_STATE(child)->passive_reap_next;
+ 	CPL_IO_STATE(child)->passive_reap_next = NULL;
+ 
+-	reqsk_queue_removed(&inet_csk(lsk)->icsk_accept_queue, oreq);
++	inet_csk_reqsk_queue_removed(lsk, oreq);
+ 	synq_remove(child);
+ 
+ 	if (sk_acceptq_is_full(lsk) && !TOM_TUNABLE(dev, soft_backlog_limit)) {
+@@ -5957,13 +5995,13 @@
+ 	return 0;
+ }
+ 
+-static int lro_init_desc(struct napi_struct *napi, const struct pkt_gl *gl,
++static int lro_init_desc(const struct pkt_gl *gl,
+ 			 struct sock *sk, unsigned int tid, const __be64 *rsp)
+ {
+ 	struct sk_buff *skb;
+ 	struct cpl_io_state *cplios = CPL_IO_STATE(sk);
+ 
+-	skb = cxgb4_pktgl_to_skb(napi, gl, RX_PULL_LEN, RX_PULL_LEN);
++	skb = cxgb4_pktgl_to_skb(gl, RX_PULL_LEN, RX_PULL_LEN);
+ 	if (unlikely(!skb))
+ 		return -1;
+ 
+@@ -6028,7 +6066,6 @@
+ }
+ 
+ int t4_lro_receive_gl(struct cpl_io_state *cplios,
+-		      struct napi_struct *napi,
+ 		      const struct pkt_gl *gl,
+ 		      struct t4_lro_mgr *lro_mgr,
+ 		      const __be64 *rsp)
+@@ -6049,7 +6086,7 @@
+ 		goto out;
+ 
+ 	/* Start LROing the packets of this connection */
+-	if (lro_init_desc(napi, gl, sk, tid, rsp))
++	if (lro_init_desc(gl, sk, tid, rsp))
+ 		goto out;
+ 	lro_mgr->lro_merged++;
+ 	lro_mgr->lro_session_cnt++;
+diff -r 30 src/network/t4_tom/cpl_sock.c
+--- a/src/network/t4_tom/cpl_sock.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/cpl_sock.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -634,57 +634,39 @@
+ 	struct page *pages[MAX_SKB_FRAGS];
+ 	struct vm_area_struct *vma;
+ 	unsigned int off = from & (PAGE_SIZE - 1);
+-	int i;
+-	long numpages = (size + off + (PAGE_SIZE - 1)) / PAGE_SIZE;
++	int i, res, numpages = (size + off + (PAGE_SIZE - 1)) / PAGE_SIZE;
+ 	unsigned int copied = 0;
+ 	int err = 0;
+-	unsigned long locked;
+-	unsigned long lock_limit;
+-	long res;
+-	int mm_locked = 1;
+ 
+ 	ZCOPY_PRT(("zcopy_to_skb: TID %u from %lx size %lu skb %p\n", 
+ 		  cplios->tid, from, size, skb));
+ 	BUG_ON(numpages > MAX_SKB_FRAGS);
+ 
+-	down_read(&current->mm->mmap_sem);
+-	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+-	locked = numpages + current->mm->pinned_vm;
+-	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
+-		up_read(&current->mm->mmap_sem);
+-		return -ENOMEM;
+-	}
+-
+-	res = get_user_pages_locked(current, current->mm, from, numpages, 0, 0,
+-				    pages, &mm_locked);
++	res = get_user_pages_fast(from, numpages, 0, pages);
+ 	if (unlikely(res != numpages)) {
+-		ZCOPY_PRT(("zcopy_to_skb: get_user_pages() returned %u instead"
++		ZCOPY_PRT(("zcopy_to_skb: get_user_pages_fast() returned %u instead"
+ 			   " of %u pages\n", res, numpages));
+ 		if (res < 0) {
+ 			err = res;
+ 			res = 0;
+ 		} else
+ 			err = -EFAULT;
+-		if (mm_locked)
+-			up_read(&current->mm->mmap_sem);
+ 		goto no_zcopy;
+ 	}
+ 
+ 	/*
+ 	 * If any of the pages are problematic or
+-	 * if the address range crosses a VMA boundary we just
++	 * if the address range crosses a VMA boundry we just
+ 	 * reject the zero copy effort.
+ 	 */
+-
+-	if (!mm_locked)
+-		down_read(&current->mm->mmap_sem);
+-        vma = find_vma(current->mm, from);
+-        if (!vma || (vma->vm_start > from) ||
+-                (vma->vm_end < from + size) || !zcopy_vma(vma)) {
+-                        up_read(&current->mm->mmap_sem);
++	down_read(&current->mm->mmap_sem);
++	vma = find_vma(current->mm, from);
++	if (!vma || (vma->vm_start > from) ||
++		(vma->vm_end < from + size) || !zcopy_vma(vma)) {
+ 			err = -EINVAL;
+-                        goto no_zcopy;
+-        }
++			up_read(&current->mm->mmap_sem);
++			goto no_zcopy;
++	}
+ 	up_read(&current->mm->mmap_sem);
+ 
+ 	for (i = 0; i < numpages; i++) {
+@@ -1029,12 +1011,12 @@
+ }
+ #endif
+ 
+-static int chelsio_sendmsg(struct sock *sk,
++static int chelsio_sendmsg(struct kiocb *iocb, struct sock *sk,
+ 			   struct msghdr *msg, size_t size)
+ {
+ 	struct cpl_io_state *cplios;
+ 	long timeo;
+-	const struct iovec *iov;
++	struct iovec *iov;
+ 	struct sk_buff *skb = NULL;
+ 	struct tcp_sock *tp = tcp_sk(sk);
+ 	struct toedev *tdev;
+@@ -1064,11 +1046,12 @@
+ 	if (sk->sk_prot->sendmsg != chelsio_sendmsg) {
+ 		release_sock(sk);
+ 		if (sk->sk_prot->sendmsg)
+-			return sk->sk_prot->sendmsg(sk, msg, size);
++			return sk->sk_prot->sendmsg(iocb, sk, msg, size);
+ 		else
+-			return sk->sk_socket->ops->sendmsg(sk->sk_socket,
+-								msg, size);
++			return sk->sk_socket->ops->sendmsg(iocb, sk->sk_socket,
++							   msg, size);
+ 	}
++
+ 	if (ma_fail_chelsio_sendmsg(sk, timeo))
+ 		return -EAGAIN;
+ 	cplios = CPL_IO_STATE(sk);
+@@ -1088,10 +1071,10 @@
+ 	partial_thres = (cplios->port_speed > SPEED_10000) ? TOM_TUNABLE(tdev, zcopy_sendmsg_partial_xlthres) :
+ 				TOM_TUNABLE(tdev, zcopy_sendmsg_partial_thres);
+ 	if (size >= partial_thres && !cplios_flag(sk, CPLIOS_ABORT_SHUTDOWN) &&  
+-	    !corked(tp, flags) && can_do_mlock() &&
+-	    !segment_eq(get_fs(), KERNEL_DS)) 
++	    !corked(tp, flags) && !segment_eq(get_fs(), KERNEL_DS)) {
+ 		zcopy_size = size - 
+ 				TOM_TUNABLE(tdev, zcopy_sendmsg_partial_copy);
++	}
+ 
+         /* In the case of NON-BLOCKING IO we don't want to exceed the
+          * sendbuffer at all which could cause delays in the zcopy path.
+@@ -1106,8 +1089,7 @@
+ 	}
+ #endif
+ 	cplios_set_flag(sk, CPLIOS_TX_MORE_DATA);
+-	for (iovlen = msg->msg_iter.nr_segs, iov = msg->msg_iter.iov;
+-	     iovlen--; iov++) {
++	for (iovlen = msg->msg_iovlen, iov = msg->msg_iov; iovlen--; iov++) {
+ 		int seglen = min(iov->iov_len, size);
+ 		unsigned char __user *from = iov->iov_base;
+ 
+@@ -1438,8 +1420,7 @@
+ 	unsigned int wsf;
+ 	int should_ddp = cplios->ulp_mode == ULP_MODE_TCPDDP &&
+ 			!DDP_STATE(sk)->ddp_setup &&
+-			((can_do_mlock() && !segment_eq(get_fs(), KERNEL_DS)) ||
+-			TOM_TUNABLE(tdev, kseg_ddp));
++			(!segment_eq(get_fs(), KERNEL_DS) || TOM_TUNABLE(tdev, kseg_ddp));
+ 
+ 	/* This may need to be adjusted for COP modified parameters such as recv coalescing */
+ 	switch (cplios->port_speed) {
+@@ -1462,7 +1443,7 @@
+ 	if (tcp_sk(sk)->rcv_wnd < (d->lldi->sge_ingpadboundary + wsf*DDP_RSVD_WIN))
+ 		return 0;
+ 
+-	return !bitmap_full(d->ppod_bmap, d->nppods);
++	return !__bitmap_full(d->ppod_bmap, d->nppods);
+ }
+ 
+ static inline int is_ddp(const struct sk_buff *skb)
+@@ -1481,12 +1462,13 @@
+  * DDP buffer.
+  */
+ static inline int copy_data(const struct sk_buff *skb, int offset,
+-			    struct msghdr *msg, int len)
++			    struct iovec *to, int len)
+ {
+ 	if (likely(!is_ddp(skb)))                             /* RX_DATA */
+-		return skb_copy_datagram_msg(skb, offset, msg, len);
++		return skb_copy_datagram_iovec(skb, offset, to, len);
+ 	else if (likely(skb_ulp_ddp_flags(skb) & DDP_BF_NOCOPY)) { /* user DDP */
+-		iov_iter_advance(&msg->msg_iter, len);
++		to->iov_len -= len;
++		to->iov_base += len;
+ 		return 0;
+ 	}
+ 	return -EINVAL;
+@@ -1495,7 +1477,7 @@
+ /*
+  * Peek at data in a socket's receive buffer.
+  */
+-static int peekmsg(struct sock *sk, struct msghdr *msg,
++static int peekmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+ 		   size_t len, int nonblock, int flags)
+ {
+ 	long timeo;
+@@ -1602,7 +1584,7 @@
+ 		 * If MSG_TRUNC is specified the data is discarded.
+ 		 */
+ 		if (likely(!(flags & MSG_TRUNC)))
+-			if (copy_data(skb, offset, msg, avail)) {
++			if (copy_data(skb, offset, msg->msg_iov, avail)) {
+ 				if (!copied)
+ 					copied = -EFAULT;
+ 				break;
+@@ -1675,7 +1657,7 @@
+ /*
+  * Receive data from a socket into an application buffer.
+  */
+-static int chelsio_recvmsg(struct sock *sk,
++static int chelsio_recvmsg(struct kiocb *iocb, struct sock *sk,
+ 			   struct msghdr *msg, size_t len, int nonblock,
+ 			   int flags, int *addr_len)
+ {
+@@ -1688,6 +1670,7 @@
+ 	long timeo;
+ 	int user_ddp_ok, user_ddp_pending = 0;
+ 	struct ddp_state *p;
++	struct iovec *iov = msg->msg_iov;
+ 
+ #if defined(CONFIG_CHELSIO_IO_SPIN)
+ 	/*
+@@ -1701,11 +1684,11 @@
+ 
+ 	/* Urgent data is handled by the SW stack's receive */
+ 	if (unlikely(flags & MSG_OOB))
+-		return tcp_prot.recvmsg(sk, msg, len, nonblock, flags,
++		return tcp_prot.recvmsg(iocb, sk, msg, len, nonblock, flags,
+ 					addr_len);
+ 
+ 	if (unlikely(flags & MSG_PEEK))
+-		return peekmsg(sk, msg, len, nonblock, flags);
++		return peekmsg(iocb, sk, msg, len, nonblock, flags);
+ 
+ 	if (tom_sk_can_busy_loop(sk) && skb_queue_empty(&sk->sk_receive_queue) &&
+ 	    (sk->sk_state == TCP_ESTABLISHED))
+@@ -1713,18 +1696,18 @@
+ 
+ 	lock_sock(sk);
+ 
+-	if (sk->sk_prot->recvmsg != chelsio_recvmsg) {
+-		release_sock(sk);
+-		return sk->sk_prot->recvmsg(sk, msg, len, nonblock,
+-						flags, addr_len);
+-}
++        if (sk->sk_prot->recvmsg != chelsio_recvmsg) {
++                release_sock(sk);
++                return sk->sk_prot->recvmsg(iocb, sk, msg, len, nonblock,
++					    flags, addr_len);
++        }
+ 
+ 	cplios = CPL_IO_STATE(sk);
+ 	timeo = sock_rcvtimeo(sk, nonblock);
+ 	target = sock_rcvlowat(sk, flags & MSG_WAITALL, len);
+ 	request = len;
+-	user_ddp_ok = (target <= iov_iter_single_seg_count(&msg->msg_iter)) &&
+-			!((flags & MSG_WAITALL) && (msg->msg_iter.nr_segs > 1));
++	user_ddp_ok = (target <= iov->iov_len) &&
++			!((flags & MSG_WAITALL) && (msg->msg_iovlen > 1));
+ 
+ 	p = DDP_STATE(sk);
+ 
+@@ -1889,18 +1872,14 @@
+ 		else {
+ 			t4_cleanup_rbuf(sk, copied);
+ 
+-		if ((flags & MSG_WAITALL) && p->ddp_setup &&
+-		     t4_ddp_indicate_ok(p)) {
+-			if ((iov_iter_single_seg_count(&msg->msg_iter) <=
+-			     p->ind_size) || !user_ddp_ok) {
++			if ((flags & MSG_WAITALL) && p->ddp_setup && t4_ddp_indicate_ok(p)) {
++				if ((iov->iov_len <= p->ind_size) || !user_ddp_ok) {
+ 					p->indicate = tcp_sk(sk)->rcv_nxt;
+ 					t4_setup_indicate_modrx(sk);
+ 					p->indout_count++;
+ 				} else if (user_ddp_ok) {
+-					p->ubuf_ddp_pending =
+-					   user_ddp_pending =
+-					   !t4_post_ubuf(sk, msg,
+-							 nonblock, flags);
++					p->ubuf_ddp_pending = user_ddp_pending =
++						!t4_post_ubuf(sk, iov, nonblock, flags);
+ 					if (!p->ubuf_ddp_pending) {
+ 						p->post_failed++;
+ 						if (p->post_failed >=
+@@ -2044,7 +2023,7 @@
+                 if (p->ddp_setup && !is_ddp(skb) && !p->ddp_off &&
+ 		    (ULP_SKB_CB(skb)->seq == p->indicate)) {
+                         p->indicate = 0;
+-			if (skb_copy_datagram_msg(skb, offset, msg, avail)) {
++                        if (skb_copy_datagram_iovec(skb, offset, iov, avail)) {
+ 				if (!copied) {
+ 					copied = -EFAULT;
+ 					break;
+@@ -2052,21 +2031,15 @@
+                         }
+ 
+                 	if (likely(!sk_no_receive(sk))) {
+-				unsigned int iov_seg_len =
+-				    iov_iter_single_seg_count(&msg->msg_iter);
+-
+ 				if ((flags & MSG_WAITALL) &&
+-				    t4_ddp_indicate_ok(p) &&
+-				    iov_seg_len &&
+-				    ((iov_seg_len <= p->ind_size) ||
+-				      !user_ddp_ok)) {
++				    t4_ddp_indicate_ok(p) && iov->iov_len &&
++					((iov->iov_len <= p->ind_size) || !user_ddp_ok)) {
+                                         	p->indicate = tcp_sk(sk)->rcv_nxt;
+                                         	t4_setup_indicate_modrx(sk);
+                                         	p->indout_count++;
+-				} else if (iov_seg_len &&
+-					   user_ddp_ok && !user_ddp_pending) {
++				} else if (iov->iov_len && user_ddp_ok && !user_ddp_pending) {
+                         		p->ubuf_ddp_pending = user_ddp_pending =
+-					!t4_post_ubuf(sk, msg, nonblock, flags);
++                            			!t4_post_ubuf(sk, iov, nonblock, flags);
+ 					if (!p->ubuf_ddp_pending) {
+ 						p->post_failed++;
+ 						if (p->post_failed >=
+@@ -2085,8 +2058,7 @@
+ 		 */
+ 		else if (likely(!(flags & MSG_TRUNC)))
+ 			if (!is_ddp(skb)) {
+-				if (skb_copy_datagram_msg(skb, offset,
+-					msg, avail)) {
++				if (skb_copy_datagram_iovec(skb, offset, iov, avail)) {
+ 					if (!copied) {
+ 						copied = -EFAULT;
+ 						break;
+@@ -2099,7 +2071,8 @@
+ 		len -= avail;
+ 
+ 		if (is_ddp(skb)) {
+-			iov_iter_advance(&msg->msg_iter, avail);
++			iov->iov_base += avail;
++			iov->iov_len -= avail;
+ 			tp->rcv_wup += avail;
+ 		}
+ skip_copy:
+@@ -2198,7 +2171,8 @@
+ 					tp->rcv_wup += avail;
+ 					copied += avail;
+ 					len -= avail;
+-					iov_iter_advance(&msg->msg_iter, avail);
++					iov->iov_base += avail;
++					iov->iov_len -= avail;
+ 					buffers_freed++;
+ 				}
+ 				tom_eat_ddp_skb(sk, skb);
+diff -r 30 src/network/t4_tom/defs.h
+--- a/src/network/t4_tom/defs.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/defs.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -154,9 +154,7 @@
+ 					unsigned int opcode)); 
+ void t4tom_register_iscsi_lro_handler(
+ 			int (*fp_rcv)(struct sock *, u8, 
+-					const __be64 *,
+-					struct napi_struct *napi,
+-					const struct pkt_gl *,
++					const __be64 *, const struct pkt_gl *,
+ 					struct t4_lro_mgr *,
+ 					void (*flush)(struct t4_lro_mgr *,
+ 						struct sk_buff *)),
+diff -r 30 src/network/t4_tom/failover.c
+--- a/src/network/t4_tom/failover.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/failover.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -21,7 +21,7 @@
+ #include "t4_ma_failover.h"
+ #include "t4_tcb.h"
+ 
+-#include <net/bonding.h>
++#include <drivers/net/bonding/bonding.h>
+ 
+ /* Adapted from drivers/net/bonding/bond_3ad.c:__get_bond_by_port() */
+ static inline struct bonding *toe_bond_get_bond_by_port(struct port *port)
+diff -r 30 src/network/t4_tom/t4_ddp.c
+--- a/src/network/t4_tom/t4_ddp.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/t4_ddp.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -108,39 +108,24 @@
+ 		 struct ddp_gather_list **newgl,
+ 		 struct ddp_state *ds)
+ {
+-	int i;
++	int i, err;
+ 	size_t pg_off;
++	unsigned int npages;
+ 	struct ddp_gather_list *p;
+ 	int match0, match1;
+-	unsigned long lock_limit;
+-	unsigned long locked;
+-	long err, npages;
+-	int mm_locked = 1;
+-
+-	if (!len)
++	
++	if (segment_eq(get_fs(), KERNEL_DS) || !len)
+ 		return -EINVAL;
+ 	if (!access_ok(VERIFY_WRITE, addr, len))
+ 		return -EFAULT;
+ 
+ 	pg_off = addr & ~PAGE_MASK;
+ 	npages = (pg_off + len + PAGE_SIZE - 1) >> PAGE_SHIFT;
+-
+ 	p = kmalloc(sizeof(struct ddp_gather_list) +
+ 		    npages * (sizeof(dma_addr_t) + sizeof(struct page *)),
+ 		    GFP_KERNEL);
+-	if (!p) {
+-		err = -ENOMEM;
+-		goto free_gl;
+-	}
+-
+-	down_read(&current->mm->mmap_sem);
+-	lock_limit = rlimit(RLIMIT_MEMLOCK) >> PAGE_SHIFT;
+-	locked = npages + current->mm->pinned_vm;
+-	if ((locked > lock_limit) && !capable(CAP_IPC_LOCK)) {
+-		up_read(&current->mm->mmap_sem);
+-		err = -ENOMEM;
+-		goto free_gl;
+-	}
++	if (!p)
++		return -ENOMEM;
+ 
+ 	p->type = DDP_TYPE_USER;
+ 	p->pages = (struct page **)&p->phys_addr[npages];
+@@ -148,10 +133,8 @@
+ 	 * get_user_pages() will mark the pages dirty so we don't need to do it
+ 	 * later.  See how get_user_pages() uses FOLL_TOUCH | FOLL_WRITE.
+ 	 */
+-	err = get_user_pages_locked(current, current->mm, addr, npages, 1, 0,
+-				    p->pages, &mm_locked);
+-	if (mm_locked)
+-		up_read(&current->mm->mmap_sem);
++	err = GET_USER_PAGES(addr, npages, 1, p->pages);
++
+ 	if (err != npages) {
+ 		if (err < 0)
+ 			goto free_gl;
+@@ -303,6 +286,12 @@
+ 	return nppods;
+ }
+ 
++/*
++ * Starting offset for the user DDP buffer.  A non-0 value ensures a DDP flush
++ * won't block indefinitely if there's nothing to place (which should be rare).
++ */
++#define UBUF_OFFSET 0
++
+ static inline u64 select_ddp_flags(const struct sock *sk, int buf_idx,
+ 					     int nonblock, int rcv_flags)
+ {
+@@ -329,7 +318,8 @@
+ /**
+  * setup_iovec_ppods - setup HW page pods for a user iovec
+  * @sk: the associated socket
+- * @msg: the msghdr for access to iterator
++ * @iov: the iovec
++ * @oft: additional bytes to map before the start of the buffer
+  *
+  * Pins a user iovec and sets up HW page pods for DDP into it.  We allocate
+  * page pods for user buffers on the first call per socket.  Afterwards we
+@@ -338,23 +328,20 @@
+  *
+  * The current implementation handles iovecs with only one entry.
+  */
+-static int t4_setup_iovec_ppods(struct sock *sk, struct msghdr *msg)
++static int t4_setup_iovec_ppods(struct sock *sk, const struct iovec *iov, int oft)
+ {
+ 	int err, nppods, tag;
+ 	unsigned int len;
+ 	struct ddp_gather_list *gl;
+ 	struct ddp_state *p = DDP_STATE(sk);
+-	const struct iovec *iov = msg->msg_iter.iov;
+-	unsigned long addr = (unsigned long)iov->iov_base +
+-				msg->msg_iter.iov_offset;
++	unsigned long addr = (unsigned long)iov->iov_base - oft;
+ 
+ 	if (p->ubuf[0] && p->ubuf[1]) {
+ 		p->cur_ubuf ^= 1;
+ 		nppods = p->ubuf[p->cur_ubuf]->nppods;
+ 		tag = p->ubuf[p->cur_ubuf]->tag;
+ 	} else if (!p->ubuf_nppods) {
+-		err = t4_alloc_buf1_ppods(sk, p, addr,
+-				iov_iter_single_seg_count(&msg->msg_iter));
++		err = t4_alloc_buf1_ppods(sk, p, addr, iov->iov_len + oft);
+ 		if (err < 0)
+ 			return err;
+ 		nppods = p->ubuf_nppods;
+@@ -369,7 +356,7 @@
+ 	len -= addr & ~PAGE_MASK;
+ 	if (len > M_TCB_RX_DDP_BUF0_LEN)
+ 		len = M_TCB_RX_DDP_BUF0_LEN;
+-	len = min_t(int, len, iov_iter_single_seg_count(&msg->msg_iter));
++	len = min_t(int, len, iov->iov_len + oft);
+ 
+ 	if (!segment_eq(get_fs(), KERNEL_DS))
+ 		err = t4_pin_pages(p->pdev, addr, len, &gl, p);
+@@ -397,18 +384,18 @@
+ 	return len;
+ }
+ 
+-int t4_post_ubuf(struct sock *sk, struct msghdr *msg,
++int t4_post_ubuf(struct sock *sk, const struct iovec *iov,
+ 		 int nonblock, int rcv_flags)
+ {
+ 	int len, ret;
+ 	u64 flags;
+ 	struct ddp_state *p = DDP_STATE(sk);
+ 
+-	len = t4_setup_iovec_ppods(sk, msg);
++	len = t4_setup_iovec_ppods(sk, iov, UBUF_OFFSET);
+ 	if (len < 0)
+ 		return len;
+ 
+-	p->buf_state[1].cur_offset = 0;
++	p->buf_state[1].cur_offset = UBUF_OFFSET;
+ 	p->buf_state[1].flags = DDP_BF_NOCOPY;
+ 	p->buf_state[1].gl = p->ubuf[p->cur_ubuf];
+ 
+@@ -420,7 +407,7 @@
+ 	}
+ 	p->cur_buf = 1;
+ 
+-	ret = t4_setup_ddpbufs(sk, 0, 0, len, 0, V_TF_DDP_BUF1_VALID(1ULL) |
++	ret = t4_setup_ddpbufs(sk, 0, 0, len, UBUF_OFFSET, V_TF_DDP_BUF1_VALID(1ULL) |
+ 			 V_TF_DDP_ACTIVE_BUF(1ULL) | V_TF_DDP_INDICATE_OUT(1ULL) |
+ 			flags,
+ 			 V_TF_DDP_PSHF_ENABLE_1(1ULL) |
+diff -r 30 src/network/t4_tom/t4_ddp.h
+--- a/src/network/t4_tom/t4_ddp.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/t4_ddp.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -68,7 +68,7 @@
+ int t4_map_pages(struct pci_dev *pdev, unsigned long uaddr, size_t len,
+                  struct ddp_gather_list **newgl,
+                  struct ddp_state *p);
+-int t4_post_ubuf(struct sock *sk, struct msghdr *msg, int nonblock,
++int t4_post_ubuf(struct sock *sk, const struct iovec *iov, int nonblock,
+ 		 int rcv_flags);
+ void t4_cancel_ubuf(struct sock *sk, long *timeo);
+ int t4_enter_ddp(struct sock *sk, unsigned int indicate_size, unsigned int waitall, int nonblock);
+diff -r 30 src/network/t4_tom/t4_uom.c
+--- a/src/network/t4_tom/t4_uom.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/t4_uom.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -668,7 +668,7 @@
+ 	uh->check = 0;
+ 	rtp_hdr = skb_transport_header(skb) + transhdrlen;
+ 
+-	err = memcpy_from_msg(rtp_hdr, from, cplios->rtp_header_len);
++	err = memcpy_fromiovec(rtp_hdr, from, cplios->rtp_header_len);
+ 	if (err)
+ 		goto error;
+ 
+@@ -818,7 +818,8 @@
+ 	}
+ }
+ 
+-int udpoffload_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
++int udpoffload_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
++		       size_t len)
+ {
+ 	struct inet_sock *inet = inet_sk(sk);
+ 	struct udp_sock *up = udp_sk(sk);
+@@ -1012,7 +1013,7 @@
+ 		/* ... which is an evident application bug. --ANK */
+ 		release_sock(sk);
+ 
+-		net_dbg_ratelimited(KERN_DEBUG "udp cork app bug 2\n");
++		LIMIT_NETDEBUG(KERN_DEBUG "udp cork app bug 2\n");
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
+@@ -1028,7 +1029,7 @@
+ do_append_data:
+ 	up->len += ulen;
+ 	getfrag  = ip_generic_getfrag;
+-	err = chelsio_ip_append_data(sk, getfrag, msg, ulen,
++	err = chelsio_ip_append_data(sk, getfrag, msg->msg_iov, ulen,
+ 			sizeof(struct udphdr), &ipc, &rt,
+ 			corkreq ? msg->msg_flags|MSG_MORE : msg->msg_flags);
+ 	if (err)
+@@ -1131,7 +1132,7 @@
+ 	uh->len = htons(tot_len);
+ 	uh->check = 0;
+ 	rtp_hdr = skb_transport_header(skb) + transhdrlen;
+-	err = memcpy_from_msg(rtp_hdr, from, cplios->rtp_header_len);
++	err = memcpy_fromiovec(rtp_hdr, from, cplios->rtp_header_len);
+ 	if (err)
+ 		goto error;
+ 
+@@ -1609,7 +1610,8 @@
+ }
+ 
+ 
+-int udpv6offload_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
++int udpv6offload_sendmsg(struct kiocb *iocb, struct sock *sk,
++		  struct msghdr *msg, size_t len)
+ {
+ 	struct ipv6_txoptions opt_space;
+ 	struct udp_sock *up = udp_sk(sk);
+@@ -1675,12 +1677,12 @@
+ do_udp_sendmsg:
+ 			if (__ipv6_only_sock(sk))
+ 				return -ENETUNREACH;
+-			return udp_sendmsg(sk, msg, len);
++			return udp_sendmsg(iocb, sk, msg, len);
+ 		}
+ 	}
+ 
+ 	if (up->pending == AF_INET)
+-		return udp_sendmsg(sk, msg, len);
++		return udp_sendmsg(iocb, sk, msg, len);
+ 
+ 	/* Rough check on arithmetic overflow,
+ 	   better check is made in ip6_append_data().
+@@ -1871,7 +1873,7 @@
+ 		/* ... which is an evident application bug. --ANK */
+ 		release_sock(sk);
+ 
+-		net_dbg_ratelimited(KERN_DEBUG "udp cork app bug 2\n");
++		LIMIT_NETDEBUG(KERN_DEBUG "udp cork app bug 2\n");
+ 		err = -EINVAL;
+ 		goto out;
+ 	}
+@@ -1881,7 +1883,7 @@
+ do_append_data:
+ 	up->len += ulen;
+ 	getfrag  =  is_udplite ?  udplite_getfrag : ip_generic_getfrag;
+-	err = chelsio_ip6_append_data(sk, getfrag, msg, ulen,
++	err = chelsio_ip6_append_data(sk, getfrag, msg->msg_iov, ulen,
+ 				      sizeof(struct udphdr), hlimit, tclass,
+ 				      opt, &fl6, (struct rt6_info *)dst,
+ 				      corkreq ? msg->msg_flags|MSG_MORE :
+diff -r 30 src/network/t4_tom/t4tom_ma_failover.c
+--- a/src/network/t4_tom/t4tom_ma_failover.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/t4tom_ma_failover.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -48,7 +48,7 @@
+ #include "tom_compat.h"
+ #include "offload.h"
+ 
+-#include <net/bonding.h>
++#include <drivers/net/bonding/bonding.h>
+ 
+ #ifdef CONFIG_T4_MA_FAILOVER
+ 
+diff -r 30 src/network/t4_tom/tom.c
+--- a/src/network/t4_tom/tom.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/tom.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -341,7 +341,6 @@
+ void (*tom_cpl_iscsi_callback)(struct tom_data *, struct sock *,
+ 				struct sk_buff *, unsigned int);
+ int (*fp_iscsi_lro_rcv)(struct sock *sk, u8 op, const __be64 *rsp,
+-			struct napi_struct *napi,
+ 			const struct pkt_gl *gl, struct t4_lro_mgr *lro_mgr,
+ 			void (*t4tom_flush)(struct t4_lro_mgr *,
+ 					    struct sk_buff *));
+@@ -392,9 +391,7 @@
+ 
+ void t4tom_register_iscsi_lro_handler(
+ 			int (*fp_rcv)(struct sock *, u8,
+-				const __be64 *,
+-				struct napi_struct *napi,
+-				const struct pkt_gl *,
++				const __be64 *, const struct pkt_gl *,
+ 				struct t4_lro_mgr *,
+ 				void (*t4_lro_fluch_func)(struct t4_lro_mgr *,
+ 					struct sk_buff *)),
+@@ -1088,9 +1085,8 @@
+ 	return t;
+ }
+ 
+-inline struct sk_buff *copy_gl_to_skb_pkt(const struct pkt_gl *gl,
+-					     const __be64 *rsp,
+-					     u32 pktshift)
++inline struct sk_buff *copy_gl_to_skb_pkt(const struct pkt_gl *gl, const __be64 *rsp,
++					  u32 pktshift)
+ {
+         struct sk_buff *skb;
+ 
+@@ -1192,14 +1188,13 @@
+ 	return 0;
+ }
+ 
+-static inline int t4_recv_pkt(struct tom_data *td, struct napi_struct *napi,
+-			      const struct pkt_gl *gl, const __be64 *rsp)
++static inline int t4_recv_pkt(struct tom_data *td, const struct pkt_gl *gl, const __be64 *rsp)
+ {
+ 	unsigned int opcode = *(u8 *)rsp;
+ 	struct sk_buff *skb;
+ 	int ret;
+ 
+-	skb = copy_gl_to_skb_pkt(gl, rsp, td->lldi->sge_pktshift);
++	skb = copy_gl_to_skb_pkt(gl , rsp, td->lldi->sge_pktshift);
+ 	if (skb == NULL)
+ 		return -ENOMEM;
+ 	ret = tom_cpl_handlers[opcode](td, skb);
+@@ -1211,8 +1206,11 @@
+ }
+ 
+ #define RX_PULL_LEN 128
++extern struct sk_buff *cxgb4_pktgl_to_skb(const struct pkt_gl *gl,
++					  unsigned int skb_len,
++					  unsigned int pull_len);
++
+ extern int t4_lro_receive_gl(struct cpl_io_state *cplios,
+-			     struct napi_struct *napi,
+ 			     const struct pkt_gl *gl,
+ 			     struct t4_lro_mgr *lro_mgr,
+ 			     const __be64 *rsp);
+@@ -1240,7 +1238,7 @@
+ 
+ int t4tom_uld_rx_handler(void *handle, const __be64 *rsp,
+ 			 const struct pkt_gl *gl,
+-			 struct t4_lro_mgr *lro_mgr, struct napi_struct *napi)
++			 struct t4_lro_mgr *lro_mgr, unsigned int napi_id)
+ {
+ 	struct tom_data *td = handle;
+ 	struct sk_buff *skb;
+@@ -1250,7 +1248,7 @@
+ 	bool rxdata = (op == CPL_RX_DATA);
+ 
+ 	if (unlikely(op == CPL_RX_PKT)) {
+-		if (t4_recv_pkt(td, napi, gl, rsp) < 0)
++		if (t4_recv_pkt(td, gl, rsp) < 0)
+ 			goto nomem;
+ 		return 0;
+ 	}
+@@ -1276,7 +1274,7 @@
+ 	}
+ 
+ 	if (cplios && (IS_ISCSI_OPCODE(op)) && fp_iscsi_lro_rcv) {
+-		if (!fp_iscsi_lro_rcv(sk, op, rsp, napi, gl,
++		if (!fp_iscsi_lro_rcv(sk, op, rsp, gl,
+ 				      lro_mgr, t4_lro_flush))
+ 			return 0;
+ 	}
+@@ -1298,14 +1296,14 @@
+ 		 */
+ 		if (cplios && cplios->lro && rxdata &&
+ 		      (cplios->ulp_mode != ULP_MODE_TCPDDP)) {
+-			if (!t4_lro_receive_gl(cplios, napi, gl, lro_mgr, rsp))
++			if (!t4_lro_receive_gl(cplios, gl, lro_mgr, rsp))
+ 					return 0;
+ 		}
+ 
+-		skb = cxgb4_pktgl_to_skb(napi, gl, RX_PULL_LEN, RX_PULL_LEN);
++		skb = cxgb4_pktgl_to_skb(gl, RX_PULL_LEN, RX_PULL_LEN);
+ 		if (unlikely(!skb))
+ 			goto nomem;
+-		tom_skb_set_napi_id(skb, napi->napi_id);
++		tom_skb_set_napi_id(skb, napi_id);
+ 	}
+ 	t4_recv(td, &skb, rsp);
+ 	return 0;
+diff -r 30 src/network/t4_tom/tom.h
+--- a/src/network/t4_tom/tom.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/tom.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -233,7 +233,12 @@
+ }
+ #endif
+ 
++extern struct sk_buff *cxgb4_pktgl_to_skb(const struct pkt_gl *gl,
++					  unsigned int skb_len,
++					  unsigned int pull_len);
++
+ #define RX_PULL_LEN 128
++
+ /*
+  * Access a configurable parameter of a TOE device's TOM.
+  */
+diff -r 30 src/network/t4_tom/tom_compat.h
+--- a/src/network/t4_tom/tom_compat.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/src/network/t4_tom/tom_compat.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -469,7 +469,6 @@
+ 	for (slot = 0; slot <= hashinfo->ehash_mask; slot++) {
+ 		struct inet_ehash_bucket *head = &hashinfo->ehash[slot];
+ restart_rcu:
+-		cond_resched();
+ 		rcu_read_lock();
+ restart:
+ 		sk_nulls_for_each_rcu(sk, node, &head->chain) {
+@@ -488,7 +487,7 @@
+ 				continue;
+ 
+ 			if (unlikely(!atomic_inc_not_zero(&tw->tw_refcnt)))
+-				continue;
++			continue;
+ 
+ 			if (unlikely((tw->tw_family != family) ||
+ 				atomic_read(&twsk_net(tw)->count))) {
+@@ -498,7 +497,7 @@
+ 
+ 			rcu_read_unlock();
+ 			local_bh_disable();
+-			inet_twsk_deschedule(tw);
++			inet_twsk_deschedule(tw, twdr);
+ 			local_bh_enable();
+ 			inet_twsk_put(tw);
+ 			goto restart_rcu;
+diff -r 30 tools/cudbg/app/lib/inc/common.h
+--- a/tools/cudbg/app/lib/inc/common.h	Thu Apr 21 15:10:29 2016 +0530
++++ b/tools/cudbg/app/lib/inc/common.h	Thu Apr 21 15:27:13 2016 +0530
+@@ -516,6 +516,30 @@
+ 	return (ticks << adap->params.tp.dack_re) / core_ticks_per_usec(adap);
+ }
+ 
++/**
++ *	hash_mac_addr - return the hash value of a MAC address
++ *	@addr: the 48-bit Ethernet MAC address
++ *
++ *	Hashes a MAC address according to the hash function used by hardware
++ *	inexact (hash) address matching.  The description in the hardware
++ *	documentation for the MPS says this:
++ *
++ *	    The hash function takes the 48 bit MAC address and hashes
++ *	    it down to six bits.  Bit zero of the hash is the XOR of
++ *	    bits 0, 6 ... 42 of the MAC address.  The other hash bits
++ *	    are computed in a similar fashion ending with bit five of
++ *	    the hash as the XOR of bits 5, 11 ... 47 of the MAC address.
++ */
++static inline int hash_mac_addr(const u8 *addr)
++{
++	u32 a = ((u32)addr[0] << 16) | ((u32)addr[1] << 8) | addr[2];
++	u32 b = ((u32)addr[3] << 16) | ((u32)addr[4] << 8) | addr[5];
++	a ^= b;
++	a ^= (a >> 12);
++	a ^= (a >> 6);
++	return a & 0x3f;
++}
++
+ void t4_set_reg_field(struct adapter *adap, unsigned int addr, u32 mask, u32 val);
+ 
+ void t4_record_mbox_marker(struct adapter *adapter,
+@@ -707,31 +731,6 @@
+ 	return t4_memory_rw(adap, MEMWIN_NIC, mtype, addr, len, buf, T4_MEMORY_WRITE);
+ }
+ 
+-/**
+- *	hash_mac_addr - return the hash value of a MAC address
+- *	@addr: the 48-bit Ethernet MAC address
+- *
+- *	Hashes a MAC address according to the hash function used by hardware
+- *	inexact (hash) address matching.  The description in the hardware
+- *	documentation for the MPS says this:
+- *
+- *	    The hash function takes the 48 bit MAC address and hashes
+- *	    it down to six bits.  Bit zero of the hash is the XOR of
+- *	    bits 0, 6 ... 42 of the MAC address.  The other hash bits
+- *	    are computed in a similar fashion ending with bit five of
+- *	    the hash as the XOR of bits 5, 11 ... 47 of the MAC address.
+- */
+-static inline int hash_mac_addr(const u8 *addr)
+-{
+-	u32 a = ((u32)addr[0] << 16) | ((u32)addr[1] << 8) | addr[2];
+-	u32 b = ((u32)addr[3] << 16) | ((u32)addr[4] << 8) | addr[5];
+-
+-	a ^= b;
+-	a ^= (a >> 12);
+-	a ^= (a >> 6);
+-	return a & 0x3f;
+-}
+-
+ extern unsigned int t4_get_regs_len(struct adapter *adapter);
+ extern void t4_get_regs(struct adapter *adap, void *buf, size_t buf_size);
+ 
+diff -r 30 tools/cudbg/app/lib/src/t4_hw.c
+--- a/tools/cudbg/app/lib/src/t4_hw.c	Thu Apr 21 15:10:29 2016 +0530
++++ b/tools/cudbg/app/lib/src/t4_hw.c	Thu Apr 21 15:27:13 2016 +0530
+@@ -8293,8 +8293,9 @@
+ 		adapter->params.arch.cng_ch_bits_log = 2;
+ 	} else if (is_t6(adapter->params.chip)) {
+ 		adapter->params.arch.sge_fl_db = 0;
++		/* For T6, we reserve last 2 entries for MATCHALL mac */
+ 		adapter->params.arch.mps_tcam_size =
+-				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES;
++				 NUM_MPS_T5_CLS_SRAM_L_INSTANCES - 2;
+ 		adapter->params.arch.mps_rplc_size = 256;
+ 		adapter->params.arch.nchan = 2;
+ 		adapter->params.arch.pm_stats_cnt = T6_PM_NSTATS;
+@@ -8872,7 +8873,6 @@
+ 		p->lport = j;
+ 		p->rss_size = rss_size;
+ 		t4_os_set_hw_addr(adap, i, addr);
+-		adap->port[i]->dev_port = j;
+ 
+ 		ret = be32_to_cpu(c.u.info.lstatus_to_modtype);
+ 		p->mdio_addr = (ret & F_FW_PORT_CMD_MDIOCAP) ?

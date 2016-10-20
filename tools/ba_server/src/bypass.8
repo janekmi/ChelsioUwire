@@ -1,0 +1,88 @@
+.\" -*- nroff -*-
+.\" Copyright 2004-2011 by Chelsio Communications.  All Rights Reserved.
+.TH BYPASS "8" "August 2011" "bypass 1.2" "Linux"
+.SH "NAME"
+bypass \- display or change Chelsio bypass card settings
+.SH "SYNOPSIS"
+.B bypass
+\fIinterface_name\fR
+\fIget\fR \fB--default_state\fR
+
+.B bypass
+\fIinterface_name\fR
+\fIget\fR \fB--current_state\fR
+
+.B bypass
+\fIinterface_name\fR
+\fIget\fR \fB--watchdog\fR
+
+.B bypass
+\fIinterface_name\fR
+\fIget\fR \fB--watchdog_timeout\fR
+
+.B bypass
+\fIinterface_name\fR
+\fIset\fR \fB--default_state\fR bypass|disconnect
+
+.B bypass
+\fIinterface_name\fR
+\fIset\fR \fB--current_state\fR bypass|disconnect|normal
+
+.B bypass
+\fIinterface_name\fR
+\fIset\fR \fB--watchdog\fR enable|disable|lock|ping
+
+.B bypass
+\fIinterface_name\fR
+\fIset\fR \fB--watchdog_timeout\fR timeout-in-milliseconds
+
+.SH "DESCRIPTION"
+.BI bypass
+displays or sets operational parameters of the Chelsio bypass card. It
+complements standard tools used to configure network settings and provides
+functionality not available through such tools.
+
+.I interface_name
+is the interface name assoctiated with bypass adapter e.g. "eth0".
+.TP
+.I set
+or
+.I get
+is the type of access to a parameter.
+
+.SH "OPTIONS"
+.TP
+\fBhelp\fR
+show usage information
+.PP
+.B bypass
+supports the following settings:
+.TP
+\fB--default_state \fBbypass\fR|\fBdisconnect\fR
+The initial state of the bypass adapter. In \fBbypass\fR mode packets are
+passed between the ports without host intervention. If set to \fBdisconnect\fR
+all packets are dropped.
+.TP
+\fB--current_state \fBbypass\fR|\fBdisconnect\fR|\fBnormal\fR
+The current state of the bypass adapter. In \fBbypass\fR mode packets are
+passed between the ports without host intervention. If set to \fBdisconnect\fR,
+all packets are dropped. In \fBnormal\fR mode packets can be selectively 
+redirected to the host ports.
+.TP
+\fB--watchdog \fBenable\fR|\fBdisable\fR \fBlock\fR|\fBping\fR
+The watchdog timer can be enabled or disabled. If it is enabled then it must
+be pinged by software at least every \fBwatchdog_timeout\fR milliseconds or
+the bypass adapter will revert to the default state. Use \fBping\fR to reset
+the watchdog timer. To lock the state of the watchdog timer, use the \fBlock\fR
+parameter. Once locked, the timer remains in the state it was at the time of
+the lock.
+.TP
+\fB--watchdog_timeout \fBtimeout\fR
+The number of milliseconds before the watchdog timer will fire.
+.SH BUGS
+None known.
+.SH "SEE ALSO"
+ifconfig(8), redirect(8)
+.SH "AVAILABILITY"
+.B bypass
+is available from Chelsio Communications.

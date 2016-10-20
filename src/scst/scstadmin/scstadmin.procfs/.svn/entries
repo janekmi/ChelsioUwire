@@ -1,0 +1,56 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/scstadmin/scstadmin.procfs
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-12-17T11:40:50.135777Z
+5144
+bvassche
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+scst-0.8.22
+dir
+
+scstadmin
+file
+
+
+
+
+2014-04-10T13:32:31.000000Z
+5a1b8f97562e6375217e3f43b1973fdd
+2010-07-22T14:51:08.946394Z
+1861
+mgandalf
+has-props
+
+Makefile
+file
+
+
+
+
+2014-04-10T13:32:31.000000Z
+2a87d79c696a052cde93cf329bd81da5
+2013-12-17T11:40:50.135777Z
+5144
+bvassche
+

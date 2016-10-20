@@ -1,0 +1,16 @@
+K 10
+svn:ignore
+V 117
+*.o
+*.mod.c
+*.ko
+*.ko.cmd
+*.o.cmd
+.tmp_versions
+Modules.symvers
+Module.symvers
+modules.order
+Module.markers
+.depend*
+
+END

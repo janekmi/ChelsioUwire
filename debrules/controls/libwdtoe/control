@@ -1,0 +1,7 @@
+Package: libwdtoe
+Section: libs
+Version: 2.12.0.3 
+Priority: optional
+Architecture: any
+Maintainer: Chelsio Communications <support@chelsio.com>
+Description: libwdtoe provides a device-specific userspace library for Chelsio driver for use with the WD-TOE drivers.

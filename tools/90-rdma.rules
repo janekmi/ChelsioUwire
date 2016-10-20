@@ -1,0 +1,7 @@
+KERNEL=="umad*", SYMLINK+="infiniband/%k"
+KERNEL=="issm*", SYMLINK+="infiniband/%k"
+KERNEL=="ucm*", SYMLINK+="infiniband/%k", MODE="0666"
+KERNEL=="uverbs*", SYMLINK+="infiniband/%k", MODE="0666"
+KERNEL=="uat", SYMLINK+="infiniband/%k", MODE="0666"
+KERNEL=="ucma", SYMLINK+="infiniband/%k", MODE="0666"
+KERNEL=="rdma_cm", SYMLINK+="infiniband/%k", MODE="0666"

@@ -1,0 +1,14 @@
+all
+- => not bind 0
+- => not
+- => offlaod
+net 102.50/24
+vlan > 10000 =>
+tos 0 => class -1
+net 192.68/24 => !offload
+host 192.-1.1.1 => !offload
+dscp -10 => offload
+- => offload cong high_speed
+src vlan 80 => offload
+mark 1.1.1.1 => offload
+80 => offload

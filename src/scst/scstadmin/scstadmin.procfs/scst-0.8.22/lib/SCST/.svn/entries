@@ -1,0 +1,40 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/scstadmin/scstadmin.procfs/scst-0.8.22/lib/SCST
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-09-06T06:39:25.494508Z
+4988
+bvassche
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+SCST.pm
+file
+
+
+
+
+2014-04-10T13:32:31.000000Z
+310247a7bb42acfce34b6e7a340e5dbe
+2013-09-06T06:39:25.494508Z
+4988
+bvassche
+

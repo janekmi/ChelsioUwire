@@ -1,0 +1,10 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+if [ ! -f /etc/chelsio-iscsi ] ; then
+        mkdir -p /etc/chelsio-iscsi
+fi ;
+
+exit 0

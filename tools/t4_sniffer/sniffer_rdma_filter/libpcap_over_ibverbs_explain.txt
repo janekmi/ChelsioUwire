@@ -1,0 +1,46 @@
+Explaination of modification of libpcap to etrieve traffic over ibverbs.
+========================================================================
+To be familiar with operation, please first read 
+sniffer_over_ibverbs_explain.txt.
+
+Modified pcap files include Makefile, pcap-int.h and pcap-linux.c
+
+1) for Makefile, we only add a define for CHELSIO_RDMA.
+
+2) for pcap-int.h, we add to "struct pcap" our additional variables used
+to communicate with ibverbs per interface basis. Added stuffs are ifdef with
+CHELSIO_RDMA.
+
+3) for pcap-linux.c, added stuffs are ifdef with CHELSIO_RDMA.
+added stuffs area ifdef with CHELSIO_RDMA
+
+3a) initialization
+	is taken from "sniffer program"  and it is added to function
+	"activate_mmap()".
+
+3b) cleanup at exit
+	is added to function "pcap_cleanup_linux_mmap()"
+
+3c) packet receiving logic
+	is taken from "sniffer program" and it is added to function
+	"pcap_read_linux_mmap()"
+
+	The logic has two parts: polling and receiving.
+
+	For polling, it calls ibv_poll_cq(). 
+	If error, it returns PCAP_ERROR.
+	We poll one packet at a time.
+
+	For receiving, it calls ibv_post_recv().
+	If error, it returns PCAP_ERROR.
+	If success, it hooks up a couple things between ibverbs and libpcap:
+
+description		to libpcap		from ibverbs 
+===========		==========		============
+pointer to packet	bp			chelsio_rsge.addr + 2
+packet length		pcaphdr.len		wc[0].byte_len
+timestamp		pcaphdr.tv_sec		wc[0].src_gp
+			pcaphdr.tv_usec		wc[0].imm_data
+
+With these modification, an unchanged "tcpdump" will work with this
+modified libpcap.

@@ -1,0 +1,39 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+if [ -f /sbin/iscsiadm1 ]
+then
+        mv /sbin/iscsiadm1 /sbin/iscsiadm
+else
+        rm -rf /sbin/iscsiadm
+fi
+if [ -f /sbin/iscsid1 ]
+then
+        mv /sbin/iscsid1 /sbin/iscsid
+else
+        rm -rf /sbin/iscsid
+fi
+if [ -f /sbin/iscsi-iname1 ]
+then
+        mv /sbin/iscsi-iname1 /sbin/iscsi-iname
+else
+        rm -rf /sbin/iscsi-iname
+fi
+if [ -f /etc/iscsi/iscsid.conf.1 ]
+then
+        mv /etc/iscsi/iscsid.conf.1 /etc/iscsi/iscsid.conf
+fi
+
+file=/etc/modprobe.d/libcxgb4.conf
+string="# Disabled by Chelsio Makefile"
+lines=`grep -n "^$string" $file 2>/dev/null | sed 's/:.*//g' | sort -gr`
+for i in $lines; do
+  sed -i "$i"'d' $file
+  sed -i "$i"'s/^#//' $file
+done
+
+depmod 2>/dev/null
+
+exit 0

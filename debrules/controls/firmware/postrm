@@ -1,0 +1,23 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+fwdir=/lib/firmware/cxgb4/
+
+if [ -h ${fwdir}/t4fw.bin ] ; then 
+     rm -f ${fwdir}/t4fw.bin 2>/dev/null;
+fi 
+if [ -h ${fwdir}/t5fw.bin ] ; then
+     rm -f ${fwdir}/t5fw.bin 2>/dev/null;
+fi 
+if [ -f ${fwdir}/t4fw.bin_bak ]; then 
+     mv ${fwdir}/t4fw.bin_bak ${fwdir}/t4fw.bin ;
+fi 
+if [ -f ${fwdir}/t5fw.bin_bak ]; then
+     mv ${fwdir}/t5fw.bin_bak ${fwdir}/t5fw.bin ;
+fi
+
+
+exit 0
+

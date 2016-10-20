@@ -1,0 +1,25 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+if [ -f /sbin/iscsiadm ]
+then
+        mv /sbin/iscsiadm /sbin/iscsiadm1
+fi
+if [ -f /sbin/iscsid ]
+then
+        mv /sbin/iscsid /sbin/iscsid1
+fi
+if [ -f /sbin/iscsi-iname ]
+then
+        mv /sbin/iscsi-iname /sbin/iscsi-iname1
+fi
+if [ -f /etc/iscsi/iscsid.conf ]
+then
+        mv /etc/iscsi/iscsid.conf /etc/iscsi/iscsid.conf.1
+fi
+
+## Generate new module dependencies.
+depmod
+exit 0

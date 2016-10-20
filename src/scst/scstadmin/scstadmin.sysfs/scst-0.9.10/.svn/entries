@@ -1,0 +1,70 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/scstadmin/scstadmin.sysfs/scst-0.9.10
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-11-19T17:14:23.113319Z
+5131
+bvassche
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+t
+dir
+
+lib
+dir
+
+MANIFEST
+file
+
+
+
+
+2014-04-10T13:32:31.000000Z
+20e496728fea82ff59d1d225e5eec00d
+2010-04-08T19:30:22.789712Z
+1599
+mgandalf
+
+Makefile.PL
+file
+
+
+
+
+2014-04-10T13:32:31.000000Z
+b5dc26e376a3b3b83ef02de350ff2150
+2010-04-08T19:30:22.789712Z
+1599
+mgandalf
+
+README
+file
+
+
+
+
+2014-04-10T13:32:31.000000Z
+3661be47c51ac290b57299b08f1be8c8
+2010-04-08T19:30:22.789712Z
+1599
+mgandalf
+

@@ -1,0 +1,7 @@
+K 13
+svn:mergeinfo
+V 238
+/branches/ibmvstgt-port/ibmvstgt/src/dummy_powerpc_defs.h:2370-2589,2677,2680-2681,2723
+/branches/sysfs-changes/ibmvstgt/src/dummy_powerpc_defs.h:2896-2897,2901
+/branches/sysfs-tree-changes/ibmvstgt/src/dummy_powerpc_defs.h:2972,3129,3142
+END

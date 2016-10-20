@@ -1,0 +1,35 @@
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TE
+END
+Progress.pm
+K 25
+svn:wc:ra_dav:version-url
+V 71
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TE/Progress.pm
+END
+VERSION.pm
+K 25
+svn:wc:ra_dav:version-url
+V 70
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TE/VERSION.pm
+END
+Common.pm
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TE/Common.pm
+END
+Funclet.pm
+K 25
+svn:wc:ra_dav:version-url
+V 70
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TE/Funclet.pm
+END
+Utility.pm
+K 25
+svn:wc:ra_dav:version-url
+V 70
+/svn/!svn/ver/55/branches/sockperf_v2/tests/verifier/lib/TE/Utility.pm
+END

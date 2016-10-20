@@ -1,0 +1,81 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/ibmvstgt
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2014-01-04T14:06:02.806852Z
+5184
+bvassche
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+generate-in-tree-patches
+file
+
+
+
+
+2014-04-10T13:32:37.000000Z
+01236b1365d95c8cd355f4500a7924e9
+2010-12-20T14:12:44.264859Z
+3146
+bvassche
+has-props
+
+README.sysfs
+file
+
+
+
+
+2014-04-10T13:32:37.000000Z
+3dcf132e557f36d890aff856697b883f
+2010-11-17T19:43:22.694971Z
+2743
+bvassche
+
+src
+dir
+
+README.procfs
+file
+
+
+
+
+2014-04-10T13:32:37.000000Z
+d2f687b078c42edeee09f4a99449a78d
+2010-11-11T12:40:57.265773Z
+2664
+bvassche
+
+Makefile
+file
+
+
+
+
+2014-04-10T13:32:37.000000Z
+9c163c187347ba4af0d1bf5ad2f1d1eb
+2011-03-10T20:07:23.010396Z
+3277
+vlnb
+has-props
+

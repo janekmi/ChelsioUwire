@@ -1,0 +1,11 @@
+#!/bin/sh
+# Kill the server processes
+
+# Most Unix systems support long format of ps output
+# for process in `ps -ef | grep "tcp\|udp" | grep -v "ef\|grep" | cut -c 10-15` 
+
+# Linux's ps only pipes out 80 characters. A wider format with "ww" option should used.
+for process in `/bin/ps -efww | grep "tcp\|udp" | grep -v "ef\|grep" | cut -c 10-15` 
+do
+	kill -9 $process
+done

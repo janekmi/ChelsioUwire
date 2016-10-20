@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# chkconfig: 345 99 1
+# description: starts and stops chelsio fcoe target
+#
+
+SCST_CONF=/etc/chelsio-fcoe/scst.conf
+PATH="/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/sbin"
+
+chfcoe_start()
+{
+	echo "Loading chfcoe module"
+	modprobe scst_vdisk
+	modprobe chfcoe
+	if [ -f $SCST_CONF ]; then
+		sleep 2
+		scstadmin -config $SCST_CONF >/dev/null 2>&1
+	fi
+}
+
+chfcoe_stop()
+{
+	echo "Unloading chfcoe module"
+	rmmod chfcoe
+}
+
+chfcoe_status()
+{
+	lsmod |grep -w chfcoe >/dev/null 2>&1
+	if [ $? -eq 0 ]; then
+		echo "chfcoe module loaded"
+	else
+		echo "chfcoe module not loaded"
+	fi
+}
+
+
+case $1 in
+	start)
+		chfcoe_start
+		;;
+	stop)
+		chfcoe_stop
+		;;
+	restart)
+		chfcoe_stop
+		chfcoe_start
+		;;
+	status)
+		chfcoe_status
+		;;
+	*)
+		echo $"Usage $0 {start|stop|restart|status}"
+		exit 1
+esac
+exit 0 

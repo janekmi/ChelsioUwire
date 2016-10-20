@@ -1,0 +1,11 @@
+--- usr/iscsi_sysfs.c.orig	2011-09-15 15:58:36.000000000 -0700
++++ usr/iscsi_sysfs.c	2011-09-15 15:58:48.000000000 -0700
+@@ -320,7 +320,7 @@
+ {
+ 	struct host_info *ret_info = data;
+ 
+-	if (!strcmp(ret_info->iface.hwaddress, info->iface.hwaddress)) {
++	if (!strcasecmp(ret_info->iface.hwaddress, info->iface.hwaddress)) {
+ 		ret_info->host_no = info->host_no;
+ 		return 1;
+ 	}

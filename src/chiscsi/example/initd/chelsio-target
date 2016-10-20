@@ -1,0 +1,219 @@
+#!/bin/sh
+#
+# chkconfig: - 39 35
+# description: Starts and stops the Chelsio iSCSI target
+#
+# config:  /etc/chelsio-iscsi/chiscsi.conf
+
+# Source function library.
+if [ -f /etc/init.d/functions ] ; then
+	. /etc/init.d/functions
+elif [ -f /etc/rc.d/init.d/functions ] ; then
+	. /etc/rc.d/init.d/functions
+else
+	exit 0
+fi
+
+CONFIG=/etc/chelsio-iscsi/chiscsi.conf
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+[ -f /etc/sysconfig/chiscsi ] && . /etc/sysconfig/chiscsi
+
+t3=$(((`lspci | grep "Chelsio Communications Inc S3" | wc -l`)+(`lspci | grep "Chelsio Communications Inc N3" | wc -l`)))
+t4=$(((`lspci | grep "Chelsio Communications Inc T4" | wc -l`)+(`lspci | grep "Chelsio Communications Inc T5" | wc -l`)))
+
+isns_cnt()
+{
+	do_kill=$1
+	cnt=0
+	pids=`ps -C chisns -o pid=`
+	for pid in $pids; do
+		s=`cat /proc/$pid/cmdline`
+		s1=`expr match "$s" 'chisns\([-it]*\)'`
+		if [ "$s1" == "-t" ]; then
+			if [ $do_kill -gt 0 ]; then
+				echo "Stop Target iSNS client, pid=$pid."
+				kill -15 $pid
+			else
+				echo "Target iSNS client, pid=$pid."
+			fi
+			cnt=`expr $cnt + 1`	
+		fi
+	done
+	return $cnt
+}
+
+isns_start()
+{
+	isns_cnt 0
+	cnt=$?
+	if [ $cnt -eq 0 ] && [ -n "$TARGET_ISNS_SERVER" ]; then
+		cmdline="chisns -t server=$TARGET_ISNS_SERVER"
+		if [ -n "$TARGET_ISNS_ID" ]; then
+			cmdline="$cmdline id=$TARGET_ISNS_ID"
+		fi
+		echo "Start Target iSNS client, server=$TARGET_ISNS_SERVER"
+		$cmdline > /var/log/chisns_initiator_$TARGET_ISNS_SERVER.log &
+	fi
+}
+
+isns_status()
+{
+	isns_cnt 0
+	return 0
+}
+
+module_unload()
+{
+	tcnt=(`iscsictl -c | grep "TARGET" | wc -l`)
+	if [ $tcnt -eq 0 ]; then
+		if [ $t3 -gt 0 ]; then
+			echo "Unload Chelsio iSCSI T3 Kernel Module."
+			modprobe -r chiscsi_t3 2>/dev/null
+		fi
+		if [ $t4 -gt 0 ]; then
+			echo "Unload Chelsio iSCSI T4 Kernel Module."
+			modprobe -r chiscsi_t4 2>/dev/null
+		fi
+		echo "Unload Chelsio iSCSI base Kernel Module."
+		modprobe -r chiscsi_base 2>/dev/null
+		rc=$?
+		if [ $rc -ne 0 ]; then
+			echo "Unload Chelsio iSCSI Kernel Module failed."
+		fi
+		return $rc
+	fi
+	return 0
+}
+
+module_load()
+{
+	echo "Load Chelsio iSCSI T3 Kernel module."
+	modprobe -q chiscsi_base
+	rc=$?
+	if [ $t3 -gt 0 ]; then
+		echo "Load Chelsio iSCSI T3 Kernel module."
+		modprobe -r chiscsi_t3 2>/dev/null
+		rc=$?
+	fi
+	if [ $t4 -gt 0 ]; then
+		echo "Load Chelsio iSCSI T4 Kernel module."
+		modprobe -r chiscsi_t4 2>/dev/null
+		rc=$?
+	fi
+	if [ $rc -ne 0 ]; then
+		echo "Load Chelsio iSCSI Kernel module failed."
+	fi
+
+	return $rc
+}
+
+target_stop()
+{
+	iscsictl -s target=ALL
+}
+
+target_start()
+{
+	cnt=(`iscsictl -c | grep "TARGET" | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		iscsictl -f $CONFIG -S target=ALL
+	fi
+}
+
+target_cnt()
+{
+	cnt=(`iscsictl -c | grep "TARGET" | wc -l`)
+	echo -n "$cnt Chelsio iSCSI Target(s) started."
+}
+
+start_target()
+{
+	echo "Starting Chelsio iSCSI Target Service ..."
+
+	if [ ! -f $CONFIG ]; then
+		echo "Missing Chelsio iSCSI config file $CONFIG."
+		return
+	fi
+	cnt=(`grep "TargetName=" $CONFIG | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		echo "NO Target configured in $CONFIG."
+		return
+	fi
+	
+	cnt=(`lsmod | grep chiscsi | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		module_load
+		rc=$?
+		[ $rc -eq 0 ] || return
+	fi
+	target_start
+	target_cnt
+	echo
+
+	isns_start
+
+	echo "Chelsio iSCSI Target Service started."
+	echo
+}
+	
+stop_target()
+{
+	echo "Stopping Chelsio iSCSI Target Service ..."
+
+	cnt=(`lsmod | grep chiscsi | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		echo "Chelsio iSCSI Target Service already stopped."
+		return
+	fi
+
+	isns_cnt 1
+	target_stop
+	
+	module_unload
+	rc=$?
+	[ $rc -eq 0 ] || return
+
+	echo "Chelsio iSCSI Target Service stopped."
+	echo
+}
+
+restart_target()
+{
+        stop_target
+        start_target
+}
+
+status_target()
+{
+	cnt=(`lsmod | grep chiscsi | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		echo "Chelsio iSCSI Module not loaded."
+		return
+	fi
+	
+	target_cnt
+	echo
+	isns_cnt 0
+}
+
+case "$1" in
+	start)
+		start_target
+		;;
+	stop)
+		stop_target
+		;;
+	restart)
+		restart_target
+		;;
+	status)
+		status_target
+		;;
+	*)
+		echo $"Usage: $0 {start|stop|restart|status}"
+		exit 1
+		;
+esac
+
+exit 0

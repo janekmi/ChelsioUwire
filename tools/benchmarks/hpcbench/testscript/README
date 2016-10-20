@@ -1,0 +1,49 @@
+UDP/TCP/MPI throughput test scripts 
+
+The parameters scaned in each test script:
+UDP: Fixed size test and exponential tests
+	Buffer size : 10K, 50K, 100K, 1M, 10M
+	Datagram (packet) size : 1K, 1460, 10K, 50K
+TCP: Fixed size test and exponential tests
+	Pingpong and stream tests 
+	Blocking and non-blocking tests
+	Buffer size : 10K, 100K, 1M, 10M
+	Message size : 10K, 100K, 1M, 10M, 100M
+MPI: Fixed size test and exponential tests
+	Pingpong and stream tests
+	Blocking and non-blocking tests
+	Message size : 10K, 100K, 1M, 10M, 100M
+	
+Script description
+
+[test.sh] A general UDP/TCP/MPI test script 
+          Usage: % test.sh protocol host1 host2 [port-number]
+          Protocols: [udp] UDP communication tests
+                     [tcp] TCP communication tests
+                     [mpi] MPI communication tests
+                     [all] Test all three protocols
+          Port-number: Server's listening port number in UPD and TCP tests.
+          Example 1 : % test.sh udp gw38 gw39
+          UDP communication test between "gw38" and "gw39" with default port nuumber
+          Example 2 : % test.sh tcp gw38 gw39 2000
+          TCP Tests with port number 2000
+
+[test.lsf] A UDP/TCP/MPI test script for Platform's LSF queuing system.
+           Usage: % bsub [bsuboption] test.lsf [protocol]
+           Protocols:    [udp] UDP communication tests
+                         [tcp] TCP communication tests
+                         [mpi] MPI communication tests
+                         [all] Test all three protocols
+           Bsub-options: [-n 2] Define process number
+                         [-oe logfile] Log file for output and error message
+                         [-extsche "nodes=2"] Define node number for test
+                         [-m "machinelist"] Define machines for test
+           Example: bsub -n 2 -oe log.lsf -extsched "nodes=2" -m "gw38 gw39" test.lsf tcp
+           TCP tests between hosts gw38 and gw39
+
+[test-all.lsf] Another UDP/TCP/MPI test script for Platform's LSF queuing system. 
+               This script tests all three protocols.
+               Usage: % bsub < test-all.lsf
+               You can modify the test configuration in file "test-all.lsf" between 
+               "setting" and "end of setting" part.
+

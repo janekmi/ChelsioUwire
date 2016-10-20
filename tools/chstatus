@@ -1,0 +1,446 @@
+#!/bin/bash
+
+ETHTOOL=`which ethtool 2> /dev/null`
+
+if [ -z $ETHTOOL ];
+then
+	echo "ERROR: Please install ethtool utility"
+	exit 1
+fi
+
+echo "Chelsio Card Status Rev 1.4"
+echo
+
+system=0
+interface=0
+connection=0
+packet=0
+error=0
+dmesg=0
+uname_r="/sbin/uname_r"
+
+
+if [ "$1" == "-s" ]; then
+	system=1
+elif [ "$1" == "-i" ]; then
+	interface=1
+elif [ "$1" == "-p" ]; then
+	packet=1
+elif [ "$1" == "-e" ]; then
+	error=1
+elif [ "$1" == "-d" ]; then
+	dmesg=1
+elif [ "$1" == "-c" ]; then
+	connection=1
+elif [ "$1" == "-a" ]; then
+	system=1
+	interface=1
+	connection=1
+	packet=1
+	error=1
+	dmesg=1
+else
+	echo This utility provides status information on any Chelsio NIC in the system.
+
+	echo Usage:
+	echo chstatus -a     show all status
+	echo chstatus -s     show system status
+	echo chstatus -i     show interface status
+	echo chstatus -c     show connection status
+	echo chstatus -p     show packet status
+	#echo chstatus -e     show error/drop/pause status
+	#echo chstatus -d     show dmesg status
+fi
+
+if [ `lsmod | grep -c ^cxgb4` -eq 0 ]; then
+	echo No Chelsio Module Detected
+	exit 1
+fi
+
+if [ ! -e /sys/kernel/debug/cxgb4 ]; then
+        mount -t debugfs none /sys/kernel/debug/
+fi
+
+# Look for cxgb4 devices
+list_chelsio_dev()
+{
+        list_dev=`/sbin/ip link show | grep mtu | cut -d':' -f2`
+        for dev in $list_dev
+        do
+                desc_dev=`$ETHTOOL -i $dev 2>&1 | grep cxgb4`
+                if [ $? -eq 0 ]; then
+                        echo $dev
+                fi
+        done
+}
+
+if [ "$system" == 1 ]; then
+	echo -n "System: "
+	hostname
+	socket=`cat /proc/cpuinfo | grep "physical id" | tail -1 | awk '{print $4+1}'`
+	core=`cat /proc/cpuinfo | grep -m1 "cpu cores" | awk '{print $4}'`
+	sibling=`cat /proc/cpuinfo | grep -m1 "siblings" | awk '{print $3}'`
+	hyperthread=`if [ "$core" == "$sibling" ]; then echo Disabled; else echo Enabled; fi`
+	echo "$socket Socket $core Core Hyperthreading $hyperthread"
+	cpu=`cat /proc/cpuinfo | grep -m1 "model name" | cut -d":" -f2- | sed 's/\(.*\)./\1/'`
+	echo $cpu
+	cat /proc/meminfo | grep MemTotal | awk '{printf("RAM %dGB, ", $2/1024/1024+.5)}'
+	cat /proc/meminfo | grep MemFree | awk '{printf("Free %.2fGB\n", $2/1024/1024)}'
+
+	echo -n "Linux OS "
+	valr=`uname -r`
+	if [ `uname -m` == "x86_64" ]; then valm=64-bit; else valm=32-bit; fi
+	echo $valr $valm
+
+	echo ""
+	adap_list=`lspci -d 1425: | grep Chelsio |grep [:][0-9][0-9].4 | awk -F " " {'print $1'}`
+	for adap in $adap_list
+	do
+		echo "For Adapter in PCI slot $adap"
+		pciBase=`echo $adap | sed 's/.$/0/'`
+		int_list=`list_chelsio_dev`
+		for dev in $int_list
+		do
+			dev_desc=`$ETHTOOL -i $dev 2>&1 | grep $adap`
+			if [ $? -eq 0 ]; then
+				int=$dev
+				break
+			fi
+		done
+		if [ "$int" == "" ]; then
+			echo "No cxgb4 devices present"
+			echo ""
+			exit 1
+		fi
+
+		ecardT4=`$ETHTOOL -e $int raw on offset 0x1403 length 16 | awk '{print $1}'`
+		ecardT5=`$ETHTOOL -e $int raw on offset 0x403 length 16 | awk '{print $1}'`
+                T4=`echo $ecardT4 | grep -c T4`
+                T5=`echo $ecardT5 | grep -c T5`
+                if [ $T4 == 1 ]; then
+			ecard=$ecardT4
+                        PN=`$ETHTOOL -e $int raw on offset 0x1419 length 16`
+                        SN=`$ETHTOOL -e $int raw on offset 0x143f length 24`
+                        NA=`$ETHTOOL -e $int raw on offset 0x145a length 12`
+                elif [ $T5 == 1 ]; then
+			ecard=$ecardT5
+                        PN=`$ETHTOOL -e $int raw on offset 0x419 length 16`
+                        SN=`$ETHTOOL -e $int raw on offset 0x43f length 24`
+                        NA=`$ETHTOOL -e $int raw on offset 0x45a length 12`
+                else
+                    ecard=`lspci -s $pciBase -vvv | grep 'Product Name:' | awk -F ':' '{print $2}'`
+                    PN=`lspci -s $pciBase -vvv | grep '\[PN\] Part number' | awk -F ':' '{print $2}'`
+                    SN=`lspci -s $pciBase -vvv | grep '\[SN\] Serial number' | awk -F ':' '{print $2}'`
+                    NA=`lspci -s $pciBase -vvv | grep '\[NA\] ' | awk -F ':' '{print $2}'`
+                fi
+		echo Chelsio $ecard Card
+		cat /sys/kernel/debug/cxgb4/*$adap/clk | grep Core
+		echo "PN   :" $PN
+		echo "SN   :" $SN
+		if [ "$NA" != "" ]; then echo "NA   :" $NA ; fi
+		echo "Slot :" $adap
+
+		echo ""
+		echo "Chelsio Driver/Firmware/Tool"
+		$ETHTOOL -i $int
+		cxgbtool > /dev/null 2>&1
+		if [ $? -ne 1 ]; then
+			echo "WARNING: cxgbtool not installed. Please install cxgbtool"
+		else
+			cxgbtool -v | grep cxgbtool
+		fi
+		if [ `lsmod | grep -c ^iw_cxgb4` -eq 1 ]; then
+			if [ -e /sys/kernel/debug/iw_cxgb4/*$adap/stats ]; then
+				ocq=`cat /sys/kernel/debug/iw_cxgb4/*$adap/stats | grep OCQPMEM | awk '{print $4}'`
+			fi
+			if [ `cat /sys/module/iw_cxgb4/parameters/ocqp_support` -eq 0 ]; then
+				echo On Chip Queue Not Supported
+			else
+				echo On Chip Queue Supported
+			fi
+		fi
+		echo ""
+
+	done
+	echo "Modules Loaded"
+	if [ `lsmod | grep -c ^cxgb4` -eq 1 ]; then echo cxgb4; fi
+	if [ `lsmod | grep -c ^toecore` -eq 1 ]; then echo toecore; fi
+	if [ `lsmod | grep -c ^t4_tom` -eq 1 ]; then echo t4_tom; fi
+	if [ `lsmod | grep -c ^iw_cxgb4` -eq 1 ]; then echo iw_cxgb4; fi
+	if [ `lsmod | grep -c ^rdma_ucm` -eq 1 ]; then echo rdma_ucm; fi
+	if [ `lsmod | grep -c ^mlx4_ib` -eq 1 ]; then echo mlx4_ib; fi
+	echo ""
+fi
+
+if [ "$interface" == 1 ]; then
+	adap_list=`lspci -d 1425: | grep Chelsio |grep [:][0-9][0-9].4 | awk -F " " {'print $1'}`
+	for adap in $adap_list
+	do
+		intc=0;
+		intf=""
+		echo "For Adapter in PCI Slot $adap"
+		int_list=`list_chelsio_dev`
+		for dev in $int_list
+		do
+			dev_desc=`$ETHTOOL -i $dev 2>&1 | grep $adap`
+	    	        if [ $? -eq 0 ]; then
+				intc=`expr $intc + 1`
+				intf+=$dev
+				intf+=" "
+			fi
+		done
+		if [ "$intf" == "" ]; then
+			echo "No cxgb4 devices present"
+			echo ""
+			exit 1
+		fi
+		for ((i=1; i<=$intc; i++)); do
+			iface=`echo $intf | awk -v var=$i '{print $var}'`
+			intu=`ifconfig $iface | grep -c UP`
+  			if [ $intu -eq 1 ]; then
+				up=UP
+  			else
+				up=DOWN
+			fi
+			echo "Interface $iface $up"
+			ifconfig $iface
+		done
+		echo ""
+	done
+fi
+
+if [ "$error" == 1 ]; then
+	adap_list=`lspci -d 1425: | grep Chelsio |grep [:][0-9][0-9].4 | awk -F " " {'print $1'}`
+	for adap in $adap_list
+	do
+		intf=""
+		int_list=`list_chelsio_dev`
+		for dev in $int_list
+		do
+			dev_desc=`$ETHTOOL -i $dev 2>&1 | grep $adap`
+			if [ $? -eq 0 ]; then
+				intf+=$dev
+			fi
+		done
+		if [ "$intf" == "" ]; then
+			echo "No cxgb4 devices present"
+			echo ""
+			exit 1
+		fi
+	done
+fi
+
+if [ "$packet" == 1 ]; then
+	adap_list=`lspci -d 1425: | grep Chelsio |grep [:][0-9][0-9].4 | awk -F " " {'print $1'}`
+	for adap in $adap_list
+	do
+		echo "For Adapter in PCI Slot $adap"
+		intf=""
+		intc=0;
+		int_list=`list_chelsio_dev`
+		for dev in $int_list
+		do
+			dev_desc=`$ETHTOOL -i $dev 2>&1 | grep $adap`
+			if [ $? -eq 0 ]; then
+				intc=`expr $intc + 1`
+				intf+=$dev
+				intf+=" "
+			fi
+		done
+		if [ "$intf" == "" ]; then
+			echo "No cxgb4 devices present"
+			echo ""
+			exit 1
+		fi
+		txppstotal=0
+		rxppstotal=0
+		txbpstotal=0
+		rxbpstotal=0
+		declare -a arraytxbps1
+		declare -a arraytxbps2
+		declare -a arrayrxbps1
+		declare -a arrayrxbps2
+		declare -a arraytxpps1
+		declare -a arraytxpps2
+		declare -a arrayrxpps1
+		declare -a arrayrxpps2
+       		for ((i=1; i<=$intc; i++)); do
+	       	        iface=`echo $intf | awk -v var=$i '{print $var}'`
+			arraytxbps1[$i]=`$ETHTOOL -S $iface | grep TxOctetsOK | awk '{print $3}'`
+			arrayrxbps1[$i]=`$ETHTOOL -S $iface | grep RxOctetsOK | awk '{print $3}'`
+			arraytxpps1[$i]=`$ETHTOOL -S $iface | grep TxFramesOK | awk '{print $3}'`
+			arrayrxpps1[$i]=`$ETHTOOL -S $iface | grep RxFramesOK | awk '{print $3}'`
+	       	done
+		sleep 1
+       		for ((i=1; i<=$intc; i++)); do
+           		iface=`echo $intf | awk -v var=$i '{print $var}'`
+			arraytxbps2[$i]=`$ETHTOOL -S $iface | grep TxOctetsOK | awk '{print $3}'`
+			arrayrxbps2[$i]=`$ETHTOOL -S $iface | grep RxOctetsOK | awk '{print $3}'`
+			arraytxpps2[$i]=`$ETHTOOL -S $iface | grep TxFramesOK | awk '{print $3}'`
+			arrayrxpps2[$i]=`$ETHTOOL -S $iface | grep RxFramesOK | awk '{print $3}'`
+        	done
+	        for ((i=1; i<=$intc; i++)); do
+        	        iface=`echo $intf | awk -v var=$i '{print $var}'`
+			txbpstot1=$((${arraytxbps2[$i]}-${arraytxbps1[$i]}))
+			rxbpstot1=$((${arrayrxbps2[$i]}-${arrayrxbps1[$i]}))
+			txppstot1=$((${arraytxpps2[$i]}-${arraytxpps1[$i]}))
+			rxppstot1=$((${arrayrxpps2[$i]}-${arrayrxpps1[$i]}))
+			echo Chelsio $iface TX: BPS $txbpstot1 PPS $txppstot1
+			echo Chelsio $iface RX: BPS $rxbpstot1 PPS $rxppstot1
+			echo Chelsio $iface BI: BPS $(($txbpstot1+$rxbpstot1)) PPS $(($txppstot1+$rxppstot1))
+			let txbpstotal=txbpstotal+txbpstot1
+			let rxbpstotal=rxbpstotal+rxbpstot1
+			let txppstotal=txppstotal+txppstot1
+			let rxppstotal=rxppstotal+rxppstot1
+       		done
+		echo Chelsio Total TX: BPS $txbpstotal PPS $txppstotal
+		echo Chelsio Total RX: BPS $rxbpstotal PPS $rxppstotal
+		echo Chelsio Total BI: BPS $(($txbpstotal+$rxbpstotal)) PPS $(($txppstotal+$rxppstotal))
+		echo ""
+	done
+fi
+
+if [ "$connection" == 1 ]; then
+	echo "TCP"
+	echo "LIP:LPort   FIP:FPORT   State"
+	netstat -an | grep ^tcp | awk '{print $4 "   " $5 "   " $6}'
+
+	echo
+	echo "TCP Summary"
+	echo "Session:State"
+	netstat -an | awk '/^tcp/ {A[$(NF)]++} END {for (I in A) {printf "%d:%s\n", A[I], I}}'
+
+	echo ""
+	echo -n "TCP Sessions: "
+	netstat -an | grep -c ^tcp
+	echo ""
+
+	echo "TCP Offload:"
+	adap_list=`lspci -d 1425: | grep Chelsio |grep [:][0-9][0-9].4 | awk -F " " {'print $1'}`
+	for adap in $adap_list
+	do
+		echo "For Adapter in PCI Slot $adap"
+		echo "Type:Number"
+		cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^TID | awk '{print "TID :"$6}'
+		cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^STID | awk '{print "STID:"$6}'
+		cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^ATID | awk '{print "ATID:"$6}'
+		cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^HW | awk '{print "IPv4:"$4}'
+		cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^HW | awk '{print "IPv6:"$7}'
+
+		echo
+		echo -n "TCP Offload Sessions: "
+		val1=`cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^TID | awk '{print $6}'`
+		val2=`cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^STID | awk '{print $6}'`
+		val3=`cat /sys/kernel/debug/cxgb4/*$adap/tids | grep ^ATID | awk '{print $6}'`
+		slash=`echo $val1 | grep -c /`
+		if [ $slash -eq 1 ]; then
+			val4=`echo $val1 | sed 's/\// /' | awk '{print $1}'`
+			val5=`echo $val1 | sed 's/\// /' | awk '{print $2}'`
+			val6=`expr $val2 + $val3 + $val4 + $val5`
+		else
+			val6=`expr $val1 + $val2 + $val3`
+		fi
+		echo $val6
+		echo ""
+	done
+
+	echo
+	echo "UDP"
+	echo "IP:Port"
+	netstat -an | grep ^udp | awk '{print $4}'
+
+	echo
+	echo -n "UDP Sessions: "
+	netstat -an | grep -c ^udp
+
+	echo
+	echo "WD-UDP Offload"
+	echo "IP:Port"
+	echo ""
+	if [ `lsmod | grep -c ^iw_cxgb4` -eq 1 ]; then 
+		for adap in $adap_list
+		do
+			count=0
+			intu=0
+			echo "For Adapter in PCI Slot $adap"
+			int_list=`list_chelsio_dev`
+			for dev in $int_list
+			do
+				dev_desc=`$ETHTOOL -i $dev 2>&1 | grep $adap`
+				if [ $? -eq 0 ]; then
+					intu+=`ifconfig $dev | grep -c UP`
+				fi
+			done
+			if [ $intu -eq 0 ]; then
+				count=0
+			else
+				if [ -e /sys/kernel/debug/iw_cxgb4/*$adap/qps ]; then
+					count=`grep -c raw /sys/kernel/debug/iw_cxgb4/*$adap/qps`
+				else
+					count=0;
+				fi
+			fi
+
+			for ((i=1; i<=$count; i++)); do
+				val2=`cat /sys/kernel/debug/iw_cxgb4/*$adap/qps | awk '{print $14}' | head -$i | tail -1`
+				val1=`ifconfig | grep -A1 $val2 | tail -1 | cut -d":" -f2- | awk '{print $1}'`
+				val=$val1
+				echo -en "$val"
+				val2=`cat /sys/kernel/debug/iw_cxgb4/*$adap/qps | awk '{print $5}' | head -$i | tail -1`
+				val1=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep Q= | awk '{print $11}' | sed 's/\(.*\)...../\1/' | head -$i | tail -1`
+				val=`echo $((0x$val1))`
+				echo -en ":$val\t"
+				echo
+			done
+			echo ""
+		done
+	fi
+
+	echo
+	echo -n "WD-UDP Offload Sessions: "
+	echo $count
+
+	echo
+	if [ -e /etc/libcxgb4_sock.conf ]; then
+		echo "UDP Config file"
+		cat /etc/libcxgb4_sock.conf
+	fi
+
+	echo ""
+	for adap in $adap_list
+	do
+		count=0
+		echo "For Adapter in PCI Slot $adap"
+		echo -e "Filter\tProt\tPort\tAction\tQueue"
+		count=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep -c Q=`
+		for ((i=1; i<=$count; i++)); do
+			val1=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep Q= | awk '{print $1}' | head -$i | tail -1`
+			val=$val1
+			echo -en "$val\t"
+			val1=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep Q= | awk '{print $6}' | sed 's/\(.*\).../\1/' | head -$i | tail -1`
+			val=`echo $((0x$val1))`
+			if [ "$val" -eq 17 ]; then
+				echo -en "UDP\t"
+			elif [ "$val" -eq 6 ]; then
+				echo -en "TCP\t"
+			else
+				echo -en "$val\t"
+			fi
+			val1=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep Q= | awk '{print $11}' | sed 's/\(.*\)...../\1/' | head -$i | tail -1`
+			val=`echo $((0x$val1))`
+			echo -en "$val\t"
+			val1=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep Q= | awk '{print $13}' | sed 's/\(.*\)./\1/' | head -$i | tail -1`
+			val=$val1
+			echo -en "$val\t"
+			val1=`cat /sys/kernel/debug/cxgb4/*$adap/filters | grep Q= | awk '{print $14}' | sed 's/^..//' | head -$i | tail -1`
+			val=$val1
+			echo -en "$val\t"
+			echo
+		done
+
+		echo
+		echo -n "Filters: "
+		echo $count
+		echo ""
+	done
+fi

@@ -1,0 +1,14 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+if [ -f /sbin/redirect ] ; then
+    unlink /sbin/redirect;
+fi;
+if [ -f /sbin/bypass ] ; then
+   unlink /sbin/bypass;
+fi;
+
+exit 0
+

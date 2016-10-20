@@ -1,0 +1,155 @@
+This file contains instructions for installing the WD-TOE library and
+runing netperf with the library:
+
+
+1) Install kernel modules of WD-TOE:
+------------------------------------
+
+The Kernel side part of WD-TOE is part of t4_tom but it has
+its own target in the main Makefile. To set up WD-TOE, please
+do the following:
+
+# cd repo/linux_t4_build/
+# make wdtoe install
+
+
+2) Reboot the machine and get the kernel modules in place:
+----------------------------------------------------------
+
+# reboot
+# modprobe t4_tom
+
+Now the t4_tom module as well as toecore and cxgb4 should be in the kernel
+module list:
+
+# lsmod | grep t4_tom
+t4_tom                119580  0 [permanent]
+ipv6                  322779  43 t4_tom
+toecore                23163  2 t4_tom,ipv6
+cxgb4                 234960  1 t4_tom
+
+
+3) Bring up the interface you intend to use with WD-TOE library:
+----------------------------------------------------------------
+
+Please bring up the interface that you intend to use the WD-TOE library on.
+
+# ifup eth2
+# ifconfig eth2
+eth2      Link encap:Ethernet  HWaddr 00:07:43:04:6E:61
+          inet addr:101.50.50.128  Bcast:101.255.255.255  Mask:255.0.0.0
+
+# ping 101.50.50.107
+PING 101.50.50.107 (101.50.50.107) 56(84) bytes of data.
+64 bytes from 101.50.50.107: icmp_seq=1 ttl=64 time=0.647 ms
+
+
+4) Compile user side WD-TOE library
+-----------------------------------
+
+The user side WD-TOE library is at
+# cd repo/linux_libs/libwdtoe
+
+Then configure and compile it:
+
+# ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc \
+  --libdir=/usr/lib64 && make && make install
+
+Note: to enable logging through syslog WD-TOE can be compiled in debug
+mode using the '--enable-debug' option of configure script:
+
+# ./autogen.sh && ./configure --prefix=/usr --sysconfdir=/etc \
+  --libdir=/usr/lib64 --enable-debug && make && make install
+
+
+5) WD-TOE configuration file
+----------------------------
+
+WD-TOE needs a configuration file. The configuration file contains tuning
+parameters for the t4_tom module that is required for WD-TOE.
+
+The 'make install' should have copied the configuration file to /etc:
+
+# ls /etc/wdtoe.conf
+/etc/wdtoe.conf
+
+The format of the config file is
+
+tx_hold_thres=64000
+
+There is an example of this config file in libwdtoe/examples. It is
+named 'wdtoe.conf'. If for any reason it is missing in /etc, you can
+copy it there before running WD-TOE.
+
+
+6) Running netperf with WD-TOE library
+--------------------------------------
+
+Server side:
+
+For runing netperf with WD-TOE, you need to tell the application to
+preload our WD-TOE library. The easiest way is to specify under the
+command line:
+
+# LD_PRELOAD=libwdtoe.so.1.0.0 netserver -D -4
+
+Client side:
+Same as server side, use command like:
+
+# LD_PRELOAD=libwdtoe.so.1.0.0 netperf -H 101.50.50.107 -t TCP_RR -l 10 -4
+MIGRATED TCP REQUEST/RESPONSE TEST from 0.0.0.0 (0.0.0.0) port 0 AF_INET
+	to 101.50.50.128 (101.50.50.128) port 0 AF_INET : first burst 0
+
+Local /Remote
+Socket Size   Request  Resp.   Elapsed  Trans.
+Send   Recv   Size     Size    Time     Rate
+bytes  Bytes  bytes    bytes   secs.    per sec
+
+65536  87380  1        1       10.02    28636.66
+
+
+7) Limitations
+--------------
+WD-TOE has some limitations due to its current architecture, which are:
+
+* Does not support deamonized applications (you would need to launch
+  netserver with the '-D' option to make sure the application is not
+  going to run as a daemon).
+
+* Does not provide IPv6 support. Meaning it's probably safer to start
+  netserver with the '-4' parameter, to make sure it'll run over IPv4.
+
+* Cannot handle applications with multiple sending threads.
+
+* Does not provide support for all socket-related functions yet.
+
+
+8) Debug flags:
+---------------
+The WD-TOE library allows you to perform debug logging. The library provides
+various debug levels based on paths rather than severity. You can combine
+multiple debug flags in order to log multiple paths. The list of debug levels
+is the following:
+
+INIT		0x001	/* library init operations */
+CONN		0x002	/* connection set-up and tear down operations */
+RES_ALLOC	0x004	/* resources allocation operations */
+CHAR_DEV	0x008	/* operations performed through /dev/wdtoe char devs */
+RECV		0x010	/* receive path */
+SELECT		0x020	/* select()-related operations */
+SEND		0x040	/* send path */
+CREDITS		0x080	/* TxQ credits and Rx FL credits */
+LOOKUP		0x100	/* internal look-up operations for fd:TID mapping */
+STATS		0x200	/* stats thread operations */
+
+In terms of usage, if you wanted to log all the paths for netserver you would
+have to 1) compile the library in debug mode (see Section 4) and 2) run the
+application with the WDTOE_DEBUG environment variable set as follows:
+
+# WDTOE_DEBUG=0x3ff LD_PRELOAD=libwdtoe.so netserver -4 -D
+
+The debug log messages are sent to your syslog daemon. Make sure it is up and
+running before you launch your application.
+
+Note that debug logging will have a noticeable impact on the application
+latency. The more debug path flags you have on the slower it will be.

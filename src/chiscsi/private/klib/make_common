@@ -1,0 +1,59 @@
+#####################################################################
+# Assumptions are basically that all the .c files in the CWD are modules
+# for the library and that all .h files are the interface to the library.
+#
+# need to define $PLATNAME (i386, x86_64, ...) before reaching here
+#####################################################################
+
+LIBDIR = ../../lib/klib
+
+include ../Rules.make
+include ../lib_defs.mk
+COMMON_DEFS += -D__KLIB__
+
+LINCS	+= -I. -I../../includes -I../include -Iinclude/
+CFLAGS	+= $(COMMON_CFLAGS) $(COMMON_DEFS) $(LINCS)
+CFLAGS	+= $(EXTRA_CFLAGS) $(EXTRA_FLAGS)
+
+$(warning SCST=$(SCST), LUNMASK=$(LUNMASK), BL=$(BL))
+
+ifeq ($(SCST),1)
+  EXTRA_FLAGS += -D__ISCSI_SCST__
+  libscst=.scst
+endif
+
+ifeq ($(LUNMASK),1)
+  EXTRA_FLAGS += -D__ACL_LM__
+  liblm=.lm
+endif
+
+ifeq ($(BL),1)
+  EXTRA_FLAGS += -D__CHISCSI_BLANKET_LICENSE_ENABLED__
+  libbl=.bl
+endif
+
+# library info
+LIBNAME = libchiscsi.$(PLATNAME)$(libscst)$(liblm)$(libbl).a
+LIBOBJ	=  $(patsubst %.c,%.o,$(wildcard *.c */*.c */*/*.c))
+
+$(warning LIBNAME=$(LIBNAME))
+
+# rules
+all: clean $(LIBNAME) postmake
+#all: clean
+
+$(LIBNAME): $(LIBOBJ)
+#	strip $(KLIB_KEEP_SYMBOLS) $^
+	$(AR) rcs $@ $^
+
+postmake:
+	@echo "copy $(LIBNAME) to $(LIBDIR)"
+	@mkdir -p $(LIBDIR)
+	@cp -f $(LIBNAME) $(LIBDIR)
+
+clean:
+	$(RM) $(LIBNAME)
+	@for dir in `find -type d`; do \
+	  $(RM) $$dir/*.o; \
+	done;
+	$(RM) $(LIBDIR)/$(LIBNAME)

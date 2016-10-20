@@ -1,0 +1,122 @@
+==============================================================================
+DISCLAIMER:
+
+The Chelsio SCST Subsystem for Open Source Functionality is for developers who
+want to leverage the Open Source community SCST architecture in designing
+Linux-based storage solutions, Chelsio provides a Chelsio SCST helper, which
+transparently maps the code to the Open Source SCST Subsystem. SCST is an Open
+Source standard developed by the Linux community, and is an alternative
+implementation of a SCSI target subsystem for Linux.
+==============================================================================
+
+Steps:
+
+1. Download current SCST 3.0.x source code from below path, compile and install.
+	http://sourceforge.net/p/scst/svn/HEAD/tarball?path=/branches/3.0.x
+
+2. Load scst modules
+	modprobe scst_disk
+	modprobe scst_vdisk
+	
+3. Compiling chiscsi module
+	#cd iscsi/chiscsi
+	#make clean && make enable_scst=1 && make install
+	
+4. LUN configuration
+	- In chiscsi.conf we need to mention TargetDevice section i.e.
+	
+	target:
+        TargetName=iqn.2004-05.com.chelsio.target1
+		TargetDevice=/dev/sdb,SCST
+        TargetDevice=/tmp/file1,SCST
+        		
+	target:
+        TargetName=iqn.2004-05.com.chelsio.target2
+		TargetDevice=/dev/vg_loroboro/vol1,SCST
+        
+ 	- Expose these luns to SCST i.e
+		Create a config file e.g. /etc/chelsio-scst.conf
+		Add Lun details as shown in below config file
+		
+	Sample chelsio-scst.conf file:
+
+	# cat /etc/chelsio_scst.conf
+	# pass-thru device "/dev/sdb"
+		HANDLER dev_disk {
+			DEVICE 2:0:0:0
+		}
+
+	#FILEIO devices
+		HANDLER vdisk_fileio {
+			DEVICE disk02 {
+					filename /tmp/file1
+					nv_cache 1
+			}
+		}
+
+	#BLOCKIO devices
+		HANDLER vdisk_blockio {
+			DEVICE disk03 {
+				filename /dev/vg_loroboro/vol1
+				nv_cache 1
+			}
+		}
+
+	TARGET_DRIVER CHISCSI {
+        enabled 1
+        TARGET iqn.2004-05.com.chelsio.target1{
+            LUN 0 2:0:0:0
+            LUN 1 disk02
+            enabled 1
+        }
+       TARGET iqn.2004-05.com.chelsio.target2{
+			LUN 2 disk03
+			enabled 1
+		}
+	}
+
+	Note:
+	SCST LUN order in chiscsi.conf and chelsio-scst.conf should be maintained.
+	
+	e.g. Suppose we have below device configuration in chiscsi.conf
+		TargetDevice=/tmp/file1,SCST ==> LUN-1
+        TargetDevice=/tmp/file2,SCST ==> LUN-2
+		
+		The above luns should be configured in the same order with SCST also. i.e.
+		/etc/chelsio_scst.conf should look like below.
+		
+		HANDLER vdisk_fileio {
+			DEVICE disk01 {
+					filename /tmp/file1
+					nv_cache 1
+			}
+			DEVICE disk02 {
+					filename /tmp/file2
+					nv_cache 1
+			}
+		}
+		
+		TARGET_DRIVER CHISCSI {
+			enabled 1
+			TARGET iqn.2004-05.com.chelsio.target1{
+				LUN 0 disk01
+				LUN 1 disk02
+				enabled 1
+			}
+		}
+	
+	# pass-thru device disk/tape shown under "lsscsi" output e.g.
+		[root@loroboro chiscsi]# lsscsi -l
+		[0:0:0:0]    disk    ATA      ST250DM001 HD253 1AJ1  /dev/sda
+		state=running queue_depth=1 scsi_level=6 type=0 device_blocked=0 timeout=30
+		[2:0:0:0]    disk    ATA      Hitachi HDS72105 JP2O  /dev/sdb
+		state=running queue_depth=1 scsi_level=6 type=0 device_blocked=0 timeout=30
+		
+5. Start chiscsi target
+	iscsictl -S target=ALL
+	
+6. Apply lun configuration to SCST. Below steps are mandatory after starting target(iscsictl -S target=ALL).
+	scstadmin -force -clear_config /etc/chelsio-scst.conf
+	scstadmin –config /etc/chelsio-scst.conf
+	
+7. Login from Initiator.

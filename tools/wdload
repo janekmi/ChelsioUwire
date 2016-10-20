@@ -1,0 +1,236 @@
+#!/bin/bash
+ETHTOOL=`which ethtool 2> /dev/null`
+
+echo "Chelsio wdload Rev 1.4"
+
+if [ `whoami` != root ]; then
+	echo "**FATAL** User must be root"
+	exit 1
+fi
+
+# Look for cxgb4 devices
+list_chelsio_dev()
+{
+        list_dev=`/sbin/ip link show | grep mtu | cut -d':' -f2`
+        for dev in $list_dev
+        do
+                desc_dev=`$ETHTOOL -i $dev 2>&1 | grep cxgb4`
+                if [ $? -eq 0 ]; then
+                        echo $dev
+                        intc=$((++count))
+                fi
+        done
+}
+
+kv1=`uname -r | cut -d. -f1`
+kv2=`uname -r | cut -d. -f2`
+kv3=`uname -r | cut -d. -f3`
+kv3=`echo $kv3 | cut -d- -f1`
+kv3=`echo $kv3 | cut -d_ -f1`
+
+if [ $kv1 -eq 2 -a $kv2 -eq 6 -a $kv3 -lt 29 ]; then
+        modprobe mlx4_ib
+        mlx4_ib=`lsmod | grep -c ^mlx4_ib`
+
+        if [ "$mlx4_ib" -eq 0 ]; then
+                echo "**FATAL** Modules mlx4_ib not loaded"
+                exit 1
+        fi
+fi
+
+#modprobe t4_tom unsupported_allow_unload=1
+if [ "$PROT" == "UDP" ] ; then
+	modprobe -a cxgb4 iw_cxgb4 rdma_ucm
+elif [ "$PROT" == "TCP" ] ; then
+	modprobe -a cxgb4 t4_tom
+else
+	modprobe -a cxgb4 iw_cxgb4 rdma_ucm t4_tom
+fi
+
+cxgb4=`lsmod | grep -c ^cxgb4`
+iw_cxgb4=`lsmod | grep -c ^iw_cxgb4`
+rdma_ucm=`lsmod | grep -c ^rdma_ucm`
+t4_tom=`lsmod | grep -c ^t4_tom`
+
+if [ "$PROT" == "UDP" ] ; then
+	if [ "$cxgb4" -eq 0 ] || [ "$iw_cxgb4" -eq 0 ] || [ "$rdma_ucm" -eq 0 ]; then
+		echo "**FATAL** Modules cxgb4, iw_cxgb4 or rdma_ucm not loaded"
+		exit 1
+	fi
+elif [ "$PROT" == "TCP" ] ; then
+	if [ "$cxgb4" -eq 0 ] || [ "$t4_tom" -eq 0 ]; then
+		echo "**FATAL** Modules cxgb4, iw_cxgb4, t4_tom or rdma_ucm not loaded"
+		exit 1
+	fi
+else
+	if [ "$cxgb4" -eq 0 ] || [ "$iw_cxgb4" -eq 0 ] || [ "$t4_tom" -eq 0 ] || [ "$rdma_ucm" -eq 0 ]; then
+		echo "**FATAL** Modules cxgb4, iw_cxgb4, t4_tom or rdma_ucm not loaded"
+		exit 1
+	fi
+fi
+
+intf=`list_chelsio_dev`
+
+if [ "$PROT" != "UDP" ] ; then
+	toe_sysctl=`sysctl -a | grep -c "toe.toe0_tom"`
+	if [ $toe_sysctl -eq 0 ]; then
+		echo "**FATAL** TOE sysctl not available"
+		exit 1
+	else
+		sysctl toe.toe0_tom.recvmsg_spin_us=25 &> /dev/null
+		sysctl toe.toe0_tom.tx_hold_thres=64000 &> /dev/null
+	fi
+fi
+
+if [ "$PROT" != "UDP" ] ; then
+	t4_tom_file=`modinfo -F filename t4_tom`
+	wdtoe=`grep -c wdtoe $t4_tom_file`
+	if [ $wdtoe -eq 0 ]; then
+		echo "**FATAL** WDTOE has not been compiled with t4_tom driver"
+		echo "If you only want to use UDP pleas do PROT=UDP wdload <app>"
+		echo "Otherwise please use make wdtoe_install iwarp_install or select"
+		echo "low_latency_config or T5_wire_direct_config with ./install.py"
+		exit 1
+	fi
+fi
+
+if [ ! -e /etc/wdtoe.conf ]; then
+	echo tx_hold_thres=64000 > /etc/wdtoe.conf
+fi
+
+match=0
+imatch=0
+if [ "$PROT" != "TCP" ] ; then
+	if [ ! -e /etc/libcxgb4_sock.conf ]; then
+		intr=''
+		for i in $intf; do
+        		if [ ! -z "`ifconfig $i | grep -i running`" ] ; then 
+	    	        	intr="$intr$i "; 
+		        fi 
+		done
+		iface=`echo -n "endpoint {interface="; echo $intr | awk '{print $1}'; echo -n " port=0}"`
+		echo $iface > /etc/libcxgb4_sock.conf
+
+		if [ ! -e /etc/libcxgb4_sock.conf ]; then
+			echo "**FATAL** Unable to create /etc/libcxgb4_sock.conf"
+			echo "Create the file as per the documentation and re-run."
+			exit 1
+		fi
+	else
+		for i in `seq 1 $intc` ; do
+			val=`echo $intf | awk -v var=$i '{print $var}'`
+			found=`grep -c $val /etc/libcxgb4_sock.conf`
+			if [ "$found" -ne 0 ]; then
+				match=1;
+				intm=`ifconfig $val | grep -c "inet"`
+				if [ "$intm" -ne 0 ]; then
+					imatch=1
+				fi
+			fi
+		done
+		if [ "$match" -eq 0 ]; then
+			echo "**FATAL** No Chelsio interface endpoint found in /etc/libcxgb4_sock.conf"
+			exit 1
+		elif [ "$imatch" -eq 0 ]; then
+			echo "**FATAL** No Chelsio interface IP Address for endpoint found in /etc/libcxgb4_sock.conf"
+			exit 1
+		fi
+	fi
+	port0=`grep -v "^\s*#" /etc/libcxgb4_sock.conf | grep -c port=0`
+	if [ "$port0" -gt 1 ]; then
+		echo "**FATAL** /etc/libcxgb4_sock.conf has more than 1 port=0 specified."
+		echo "Remove or comment out multiple port=0 etnries from /etc/libcxgb4_sock.conf."
+		echo "Create multiple process config files and specify with CXGB4_SOCK_CFG=<file> wdload <app>."
+		exit
+	fi
+
+	jumbo_ok=0
+	if [ "$CXGB4_SOCK_HUGE_PAGES" = "1" ]; then
+		if [ "$kv1" == "2" -a "$kv2" == "6" -a $kv3 -lt 32 ]; then
+			echo "**FATAL** CXGB4_SOCK_HUGE_PAGES=1 not supported on kernels below 2.6.32"
+			exit 1
+		elif [ `cat /proc/sys/vm/nr_hugepages` -eq 0 ]; then
+			echo "**FATAL** CXGB4_SOCK_HUGE_PAGES=1 but /proc/sys/vm/nr_hugepages=0"
+			echo "Recommend /proc/sys/vm/nr_hugepages=100"
+			exit 1
+		elif [ `dmesg | grep -c IOMMU` -ne 0 ]; then
+			echo "**FATAL** CXGB4_SOCK_HUGE_PAGES=1 but IOMMU enabled"
+			echo "Disable IOMMU Virtualization and VT-D or set kernel"
+			echo "parameters iommu=off iommu_intel=off iommu_amd=off"
+			echo "(check IOMMU is off via dmesg | grep IOMMU)"
+			exit 1
+		else
+			jumbo_ok=1
+		fi
+	fi	
+
+	match=0
+	if [ $jumbo_ok -eq 0 ]; then
+		for i in $intf ; do
+			mtu=`ip a | grep $i | grep mtu |  awk '{print $5}' | head -1`
+			if [ "`grep $i /etc/libcxgb4_sock.conf`" != "" -a $mtu -gt 4032 ] ; then
+				echo "**Fatal** $i has an MTU > 4032 and is in /etc/libcxgb4_sock.conf."
+				echo "WireDirect functions with a MTU above 4032 if kernel>=2.6.32, CXGB4_SOCK_HUGE_PAGES=1 and /proc/sys/vm/nr_hugepages!=0"
+				echo "Otherwise ensure that the interface being used for WireDirect has a MTU of 4032 or less."
+				exit 1
+			fi
+		done
+	fi
+fi
+
+if [ $1 ]; then
+	app=`which "$1" 2>/dev/null`
+	# Make sure $1 even exists
+	if [ "$?" -ne 0 ]; then
+		echo "**FATAL** Executable $1 not found"
+		exit 1 
+	fi
+	
+	is64=`file $app | grep -c 64-bit`
+	if [ "$is64" -eq 0 ]; then
+		echo "**FATAL** 32-bit Applications not supported"
+		exit
+	fi
+fi
+
+if [ ! -e /var/run/chelsio/WD ]; then
+	mkdir -p /var/run/chelsio/WD
+fi
+chmod -R a+rwx /var/run/chelsio
+
+numa=`ls /sys/devices/system/node | grep -c node`
+if [ $# -eq 0 ]; then
+	echo "Setting up Chelsio WireDirect...."
+	t4_perf=`dmesg | grep -c "Configuring Chelsio T4 devices"`
+	if [ $t4_perf -eq 0 ]; then
+		t4_perftune.sh &> /dev/kmsg
+	fi
+elif [ $numa -gt 1 ] && [ "$NUMA" != "0" ] ; then
+	val=`lspci -d 1425: | grep -m1 "Ethernet controller: Chelsio Communications Inc" | cut -d":" -f1`
+	if [ $val -ge 80 ]; then
+		node=1
+	else
+		node=0
+	fi
+	if [ "$PROT" = "TCP" ] ; then
+		echo "Launching application with Chelsio WireDirect TOE (with numactl -c $node)...."
+		LD_PRELOAD=libwdtoe.so numactl -c $node "$@"
+	elif [ "$PROT" = "UDP" ] ; then
+		echo "Launching application with Chelsio WireDirect UDP (with numactl -c $node)...."
+		LD_PRELOAD=libcxgb4_sock.so numactl -c $node "$@"
+	else
+		echo "Launching application with Chelsio WireDirect (with numactl -c $node)...."
+		LD_PRELOAD="libcxgb4_sock.so libwdtoe.so" numactl -c $node "$@"
+	fi
+else
+	if [ "$PROT" = "TCP" ] ; then
+		echo "Launching application with Chelsio WireDirect TOE...."
+		LD_PRELOAD=libwdtoe.so "$@"
+	elif [ "$PROT" = "UDP" ] ; then
+		echo "Launching application with Chelsio WireDirect UDP...."
+		LD_PRELOAD=libcxgb4_sock.so "$@"
+	else
+		echo "Launching application with Chelsio WireDirect...."
+		LD_PRELOAD="libcxgb4_sock.so libwdtoe.so" "$@"
+	fi
+fi

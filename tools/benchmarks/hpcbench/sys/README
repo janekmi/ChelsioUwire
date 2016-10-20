@@ -1,0 +1,23 @@
+ sysmon: a Linux tool to monitor system's CPU/Memory/Network information.
+
+ Usage: sysmon [-hwWbk] [-i interface-name] [-r repeat] [-t test-interval] [-T test-time]
+        [-h] Printout help messages.
+        [-w] Write all results to a file. Disable by default.
+        [-W] Write statistics of each network device to separate files. Disable by default.
+        [-b] Background (daemon) mode. Only valid when write option is defined.
+        [-k] Kill the sysmon background process (daemon). Disable by default.
+        [-i interface-name] Define the network device name (e.g. eth0). Monitor all if no interface defined.
+        [-r repeat] Repetition of monitoring. 10 times by default.
+        [-t test-interval] The interval (sample time) between each tracing in seconds. 2 seconds by default.
+        [-T test-time] The duration of system monitoring in minutes. Valid only write option defined.
+        [-o output] Specify the output (log) filename. Implies the write option.
+        Note: Default logfile has format of host-start-time.log if write option (-w) is defined.
+
+ Use "ifconfig" to check the network devices in your computer.
+ Possible names: eth0, wlan0, elan0, etc (defined by NETNAME in util.h). loop is for loopback address.
+ Example 1 (Monitor all network devices, very long format): % sysmon 
+ Example 2 (Only monitor eth0): % sysmon -r 10 -t 2 -i eth0 
+ Example 3 (Log every 10 minutes for one week, run as daemon): % sysmon -bw -i eth0 -t 600 -T 10080 
+ Output format: <CPU usage> <Memory usage> <Network information>
+ Network information: [interrupts] [recv-packets] [recv-bytes] [sent-packets] [sent-bytes]
+

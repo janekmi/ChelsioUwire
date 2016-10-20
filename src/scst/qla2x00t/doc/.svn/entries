@@ -1,0 +1,40 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/qla2x00t/doc
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2013-11-22T05:43:47.059408Z
+5135
+vlnb
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+qla2x00t-howto.html
+file
+
+
+
+
+2014-04-10T13:32:39.000000Z
+2fb8e19a64b7b04b7d62c42bec27107f
+2013-11-22T05:43:47.059408Z
+5135
+vlnb
+

@@ -1,0 +1,257 @@
+###############################################################################
+
+                 CHELSIO iSCSI Software README
+
+###############################################################################
+
+
+_____________________________________________________________________________
+Contents
+
+1.   Overall Procedure
+2.   Getting the Latest Software
+3.   Installation
+     3.1   Compiling the iSCSI Software
+     3.2   Installing the compiled binaries
+     3.3   Loading the Kernel module
+4    Configuration
+     4.1   iSCSI configuration file
+     4.2   Configuring Chelsio iSCSI Target
+5.   Chelsio target service scripts
+6.   Chelsio "iscsictl" Command-line Configuration Utility
+     6.1 Using iscsictl for Global Parameter control
+     6.2 Using iscsictl for Target control
+
+_____________________________________________________________________________
+
+1. Overall Procedure:
+
+  There are three main steps to installing the Chelsio iSCSI software.  
+  They are:
+
+   1.	Install the Chelsio or third party Ethernet Adapter driver.
+   2.	Install the iSCSI software.
+   3.	Configure the iSCSI software.
+
+  Please see the user's guide from respective vendor for full instructions on
+  installing the base drivers.  
+
+  
+2. Getting the Latest Software:
+
+  The underlying Chelsio Linux TOE driver and the iSCSI software can be 
+  downloaded from our support website at http://www.chelsio.com/support.  
+
+  Before installing the Chelsio iSCSI software with a Red Hat or SUSE kernel
+  RPMs, be sure to download and install the source RPMs for the distribution
+  (source and development for RHEL4).
+
+  
+3. Installation:
+
+  3.1 Compiling the iSCSI Software:
+  --------------------------------
+
+  In order to compile the Chelsio iSCSI software, a configured and compiled 
+  Linux kernel source tree is required. The source tree may be only compiled 
+  header files, as in RHEL4, or a complete tree. The source tree needs to be
+  configured and the header files need to be compiled. And, the Linux kernel
+  must be configured to use  modules.
+
+  Additionally, the /lib/modules must have been set up for this particular 
+  kernel 
+  (i.e. "make modules_install" has been run with the Linux kernel source tree).
+
+  1.	Untar the Chelsio iSCSI package.
+
+  2.	Compile the Chelsio iSCSI software with OFFLOAD enabled:
+
+        To enable the Chelsio TCP offload and iSCSI acceleration the Chelsio
+	offload network driver must be install for the Chelsio adapters:
+	
+	To enable iSCSI offload, use option
+		CXGB4TOE_SRC=<path to cxgb4 driver source directory>
+
+	With ChelsioUwire package, "ChelsioUwire-w.x.y.z.tar.gz" is 
+	uncompressed into /usr/src/ChelsioUwire-w.x.y.z, then the make command
+	for chiscsi:
+
+  	[chelsio@]# make CXGB4TOE_SRC=/usr/src/ChelsioUwire-w.x.y.z/src/network
+
+  3.	Compile the Chelsio iSCSI software WITHOUT offload capablity:
+
+	If only Chelsio N-series cards are installed in the system and/or iSCSI
+	acceleration is not desired, then just compile the Chelsio iSCSI
+	without option:
+
+	[chelsio@]# make
+
+  **NOTE. If make fails because of "Unable to locate the kernel source", then 
+  run make and pass in the KDIR=<kernel_source_tree> variable.  
+  The <kernel_source_tree> is the location of the Linux kernel source files.
+
+  [chelsio@]# make KDIR=<linux_source_tree> \
+	CXGB4TOE_SRC=< Chelsio Network Offload driver source directory>
+  OR
+  [chelsio@]# make KDIR=<linux_source_tree> 
+
+  
+  3.2 Installing the compiled binaries:
+  --------------------------------
+
+  To install the iSCSI software, the installer must be the root user, then
+  run "make install".
+
+  [chelsio@]# make install
+
+  The iSCSI module will be installed in the 
+  /lib/modules/<linux_kernel_version>/kernel/drivers/iscsi directory.  
+
+  The iscsictl tool will be installed in /sbin.  
+
+  
+  3.3 Loading the Kernel module:
+  --------------------------------
+
+  To load the module run modprobe as follows:
+
+  For iSCSI offload:
+  [root@]# modprobe chiscsi_t4
+
+  Without offload:
+  [root@]# modprobe chiscsi_base
+  
+  Now the iSCSI software is ready for use.
+
+4. Configuration 
+
+  4.1  Chelsio iSCSI configuration file
+  -------------------------------------
+ 
+  Please see the sample iSCSI configuration file installed in 
+  /etc/chelsio-iscsi/chiscsi.conf. This file contains configurations for 
+  target. 
+  The file contains 2 types of entity blocks which are marked in the file as
+  	global:
+  	target:
+
+  You can specifiy multiple targets blocks as needed.
+
+  This file should be edited using a standard text editor and customized to
+  fit your environment.
+
+  4.2 Configuring Chelsio iSCSI Target
+  -------------------------------------
+
+  Chelsio's implementation of the target iSCSI stack has flexibility to 
+  accommodate a large range of configurations.  
+  
+  To configure an iSCSI target, there are three minimum required parameters 
+  (in the form of key=value pairs) needed to be configured. 
+
+  target:
+       TargetName=iqn.2006-02.com.chelsio.diskarray.san1
+       TargetDevice=/dev/sda
+       PortalGroup=1@10.192.166.178:3260
+
+  -TargetName is worldwide unique iSCSI target name.
+
+  -TargetDevice is a storage device served up by the associated target.
+   This target storage device can be any of the device types that are 
+   supported (block, virtual block, RAM disk, regular file).  
+   Multiple storage devices are allowed by configuring the devices to one 
+   target or multiple targets. The software allows multiple targets 
+   to share the same device but use caution when doing this.
+
+  -PortalGroup is the portal group tag associated with a list of target 
+   IP address(es) and port number(s) that service the login request.
+
+  Please see the sample file for other iSCSI protocol specific and Chelsio
+  specific key=value parameters and modify them as required.
+
+  For quick testing, a RAM Disk or a regular file as the block storage
+  device can be used easily. For deployment in a production environment 
+  a more sophisticated storage configuration would be needed.  
+
+5. Chelsio target service scripts:
+ 
+  chelsio-target is target specific service script
+
+  The chelsio-target service does basic checks before starting the service,
+  loads the kernel module, and starts all targets configured by default. 
+  It can also be used to stop the iSCSI Target, and restart/reload 
+  configuration.
+
+  The service scripts are installed to /etc/init.d and the parameters for 
+  the scripts are installed at /etc/sysconfig/chelsio. The scripts are 
+  installed as a system service. 
+
+  To auto-start the iSCSI services, at a certain runlevel, e.g. 
+  runlevel 3, chkconfig can be used.
+  
+  [root@]# chkconfig --level 3 chelsio-target on
+
+  
+6. Chelsio "iscsictl" Command-line Configuration Utility:
+
+  The Chelsio iSCSI control tool, iscsictl, is a Command Line utility 
+  which is installed in /sbin/ and allows administration of the Chelsio iSCSI
+  Target. It can perform the following functions:
+
+  -Start / Stop the iSCSI Target
+  -Get / Set the iSCSI driver global settings
+  -Get / Set/ Remove the iSCSI node configuration settings
+  -Retrieve active session's information of a target
+  -Reload the iSCSI configuration file
+  -Write current iSCSI configuration to a file
+  -Start / Stop the iSNS client
+  -Save the current iSCSI configuration to file
+
+  For help run:
+    /sbin/iscsictl -h
+
+  6.1 Using iscsictl for Global parameter control
+  -------------------------------------
+
+  Please refer User Guide to find all options and parameters available.
+
+    1. Get the current global settings
+    
+      [root@]# iscsictl -g 
+
+    1. Set the new global settings.
+    
+      [root@]# iscsictl -G iscsi_offload_mode=ULP
+
+  
+  6.2 Using iscsictl for Target control
+  -------------------------------------
+
+  Please refer User Guide to find all options and parameters available.
+
+    1. Start a target or ALL targets.
+
+      [root@]# iscsictl -S target=iqn.2004-05.com.chelsio.target
+      [root@]# iscsictl -S target=ALL
+
+    2. Stop a target or ALL targets.
+
+      [root@]# iscsictl -s target=iqn.2004-05.com.chelsio.target
+      [root@]# iscsictl -s target=ALL
+
+
+    4. Get all or a particular target's current configuration settings 
+      
+      [root@]# iscsictl -c
+      [root@]# iscsictl -c target=iqn.2004-05.com.chelsio.target
+
+
+    5. Set target's current configuration settings 
+
+      [root@]# iscsictl -C target=iqn.2004-05.com.chelsio.target -k MaxConnections=4
+
+    6. Retrieve active session's information of a target
+
+      [root@]# iscsictl -r target=iqn.2004-05.com.chelsio.target
+
+______________________________________________________________________________

@@ -1,0 +1,30 @@
+#####################################################################
+# Assumptions are basically that all the .c files in the CWD are modules
+# for the library and that all .h files are the interface to the library.
+#####################################################################
+include ../../../make/setting_arm.make
+
+COMMON_DEFS += -D__KLIB__
+
+# i386 specific flags
+EXTRA_FLAGS =  -pipe
+# prevent gcc from keeping the stack 16 byte aligned
+EXTRA_FLAGS += $(call cc-option,-mpreferred-stack-boundary=2)
+
+# xscale
+EXTRA_FLAGS += -Wa,-mcpu=xscale -Uarm
+#COMMON_DEFS += -DCONFIG_ARCH_IOP13XX_MC
+
+LINCS	+= -I../../kernel/
+
+# library
+$(warning FPU = $(FPU))
+ifeq ($(FPU),1)
+  CFLAGS += -mhard-float
+  PLATNAME = arm.hfp
+else
+  CFLAGS += -msoft-float
+  PLATNAME = arm.sfp
+endif
+
+include ./make_common

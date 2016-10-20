@@ -1,0 +1,179 @@
+/*
+ * isns_pdu.h - isns pdu format definitions
+ */
+#ifndef __ISNS_PDU_DEFS_H__
+#define __ISNS_PDU_DEFS_H__
+
+/*
+ * read from a byte stream
+ */
+#define GET_1BYTE(PTR,BYTE)	\
+	(*(u_int8_t *)(((u_int8_t *)(PTR))+(BYTE)))
+#define SET_1BYTE(PTR,BYTE,VAL)	\
+	(*(u_int8_t *)(((u_int8_t *)((PTR)))+(BYTE)) = VAL)
+
+/* 2 bytes */
+#define GET_2BYTE(PTR,BYTE)	\
+	(ntohs(*(u_int16_t *)(((u_int8_t *)(PTR))+(BYTE))))
+#define SET_2BYTE(PTR,BYTE,VAL)	\
+	((*(u_int16_t *)(((u_int8_t *)(PTR))+(BYTE)))=htons(VAL))
+
+/* 4 bytes */
+#define GET_4BYTE(PTR,BYTE)	\
+	(ntohl(*(u_int32_t *)(((u_int8_t *)(PTR))+(BYTE))))
+#define SET_4BYTE(PTR,BYTE,VAL)	\
+	((*(u_int32_t *)(((u_int8_t *)(PTR))+(BYTE)))=htonl(VAL))
+
+/* msb -- bit 0, lsb -- bit 7 */
+#define GET_BIT(PTR,BYTE,BIT)   \
+	(((*(u_int8_t *)(((u_int8_t *)((PTR)))+(BYTE))) & (0x80>>(BIT)))>>(7-BIT))
+#define SET_BIT(PTR,BYTE,BIT)   \
+	((*(u_int8_t *)(((u_int8_t *)((PTR)))+(BYTE))) |= (0x80>>(BIT)))
+#define CLR_BIT(PTR,BYTE,BIT)   \
+	((*(u_int8_t *)(((u_int8_t *)((PTR)))+(BYTE))) &= ~(0x80>>(BIT)))
+
+/*
+ * iSNS PDU 
+ */
+#define ISNS_PDU_HDR_LEN			12
+#define ISNS_PDU_MAX_LENGTH			(0xFFFF + ISNS_PDU_HDR_LEN)
+
+/*
+ * iSNS PDU format
+ */
+#define GET_ISNS_PDU_VERSION(PDU)		GET_2BYTE((PDU),0)
+#define SET_ISNS_PDU_VERSION(PDU,VAL)		SET_2BYTE((PDU),0,(VAL))
+#define ISNSP_VERSION				0x0001
+
+#define GET_ISNS_PDU_FUNCTIONID(PDU)		GET_2BYTE((PDU),2)
+#define SET_ISNS_PDU_FUNCTIONID(PDU,VAL)	SET_2BYTE((PDU),2,(VAL))
+
+#define GET_ISNS_ERRORCODE(PDU)			GET_4BYTE((PDU),12)
+#define	ISNS_GETNEXT_RESP_ERR_CODE		0x0009
+#define	ISNS_INVALID_REG_ERR_CODE      		0x0003
+#define	ISNS_SOURCE_UNKNOWN_ERR_CODE  		0x0006
+
+/* must for iscsi */
+#define ISNS_DEV_ATTR_REG_REQ			0x0001
+#define ISNS_DEV_ATTR_REG_RESP			0x8001
+
+#define ISNS_DEV_ATTR_QUERY_REQ			0x0002
+#define ISNS_DEV_ATTR_QUERY_RESP		0x8002
+
+#define ISNS_DEV_DEREG_REQ			0x0004
+#define ISNS_DEV_DEREG_RESP			0x8004
+
+#define ISNS_SCN_REG_REQ			0x0005
+#define ISNS_SCN_REG_RESP			0x8005
+
+#define ISNS_SCN_DEREG_REQ			0x0006
+#define ISNS_SCN_DEREG_RESP			0x8006
+
+#define ISNS_SCN_EVENT				0x0007
+#define ISNS_SCN_EVENT_RESP			0x8007
+
+#define ISNS_SCN				0x0008
+#define ISNS_SCN_RESP				0x8008
+
+#define ISNS_ESI				0x000D
+#define ISNS_ESI_RESP				0x800D
+
+/*initiator related*/
+#define ISNS_GET_NEXT_REQ			0x0003
+#define ISNS_GET_NEXT_RESP			0x8003
+
+#define GET_ISNS_PDU_LENGTH(PDU)		GET_2BYTE((PDU),4)
+#define SET_ISNS_PDU_LENGTH(PDU,VAL)		SET_2BYTE((PDU),4,(VAL))
+
+#define GET_ISNS_PDU_FLAGS(PDU)			GET_2BYTE((PDU),6)
+#define SET_ISNS_PDU_FLAGS(PDU,VAL)		SET_2BYTE((PDU),6,(VAL))
+#define 	ISNS_PDU_FLAG_SENDER_CLIENT	0x8000
+#define 	ISNS_PDU_FLAG_SENDER_SERVER	0x4000
+#define 	ISNS_PDU_FLAG_AUTH_BLOCK	0x2000
+#define 	ISNS_PDU_FLAG_REPLACE		0x1000
+#define 	ISNS_PDU_FLAG_LAST_PDU		0x0800
+#define 	ISNS_PDU_FLAG_FIRST_PDU		0x0400
+
+#define GET_ISNS_PDU_TRANSACTIONID(PDU)		GET_2BYTE((PDU),8)
+#define SET_ISNS_PDU_TRANSACTIONID(PDU,VAL)	SET_2BYTE((PDU),8,(VAL))
+
+#define GET_ISNS_PDU_SEQUENCEID(PDU)		GET_2BYTE((PDU),10)
+#define SET_ISNS_PDU_SEQUENCEID(PDU,VAL)	SET_2BYTE((PDU),10,(VAL))
+
+#define GET_ISNS_ATTR_TAG(PTR)             	GET_4BYTE((PTR),0)
+#define SET_ISNS_ATTR_TAG(PTR,VAL)		SET_4BYTE((PTR),0,(VAL))
+
+#define GET_ISNS_ATTR_LENGTH(PTR)             	GET_4BYTE((PTR),0)
+#define SET_ISNS_ATTR_LENGTH(PTR,VAL)		SET_4BYTE((PTR),0,(VAL))
+
+/*
+ * iSNS Attributes
+ */
+#define ISNS_ATTR_TAG_LENGTH			4
+#define ISNS_ATTR_TAGLEN_LENGTH			4
+
+#define ISNS_ATTR_DELIMITER_TAG			0
+#define ISNS_ATTR_DELIMITER_LENGTH		0
+
+#define ISNS_ATTR_ENTITYID_TAG			1
+#define ISNS_ATTR_ENTITYID_LENGTH_MIN		4
+#define ISNS_ATTR_ENTITYID_LENGTH_MAX		256
+
+#define ISNS_ATTR_ENTITYPROTOCOL_TAG		2
+#define ISNS_ATTR_ENTITYPROTOCOL_LENGTH		4
+#define ISNS_ATTR_ENTITYPROTOCOL_ISCSI		0x2
+
+#define ISNS_ATTR_MANAGEIP_TAG			3
+#define ISNS_ATTR_MANAGEIP_LENGTH		16
+
+#define ISNS_ATTR_PORTALIP_TAG			16
+#define ISNS_ATTR_PORTALIP_LENGTH		16
+
+#define ISNS_ATTR_PORTALPORT_TAG		17
+#define ISNS_ATTR_PORTALPORT_LENGTH		4
+
+#define ISNS_ATTR_ESIPORT_TAG			20
+#define ISNS_ATTR_ESIPORT_LENGTH		4
+
+#define ISNS_ATTR_SCNPORT_TAG			23
+#define ISNS_ATTR_SCNPORT_LENGTH		4
+
+#define ISNS_ATTR_ISCSINAME_TAG			32
+#define ISNS_ATTR_ISCSINAME_LENGTH_MIN		4
+#define ISNS_ATTR_ISCSINAME_LENGTH_MAX		224
+
+#define ISNS_ATTR_ISCSINODETYPE_TAG		33
+#define ISNS_ATTR_ISCSINODETYPE_LENGTH		4
+#define 	ISNS_ATTR_ISCSINODETYPE_TARGET		(1U << 0)
+#define 	ISNS_ATTR_ISCSINODETYPE_INITIATOR	(1U << 1)
+#define 	ISNS_ATTR_ISCSINODETYPE_CONTROL		(1U << 2)
+#define 	ISNS_ATTR_ISCSINODETYPE_REMOTE		(1U << 3)
+
+#define ISNS_ATTR_ISCSIALIAS_TAG		34
+#define ISNS_ATTR_ISCSIALIAS_LENGTH_MIN		4
+#define ISNS_ATTR_ISCSIALIAS_LENGTH_MAX		256
+
+#define ISNS_ATTR_SCNBITMAP_TAG			35
+#define ISNS_ATTR_SCNBITMAP_LENGTH		4
+/* SCN Bitmap bits */
+#define 	ISNS_SCNBIT_DD_ADDED		0x1
+#define 	ISNS_SCNBIT_DD_REMOVED		0x2
+#define 	ISNS_SCNBIT_OBJ_UPDATED		0x4
+#define 	ISNS_SCNBIT_OBJ_ADDED		0x8
+#define 	ISNS_SCNBIT_OBJ_REMOVED		0x10
+#define 	ISNS_SCNBIT_MANAGEMENT		0x20
+#define 	ISNS_SCNBIT_TARGET		0x40
+#define 	ISNS_SCNBIT_INITIATOR		0x80
+
+#define ISNS_ATTR_PGISCSINAME_TAG		48
+
+#define ISNS_ATTR_PGIP_TAG			49
+#define ISNS_ATTR_PGIP_LENGTH			16
+
+#define ISNS_ATTR_PGPORT_TAG			50
+#define ISNS_ATTR_PGPORT_LENGTH			4
+
+#define ISNS_ATTR_PGTAG_TAG			51
+#define ISNS_ATTR_PGTAG_LENGTH			4
+
+#endif

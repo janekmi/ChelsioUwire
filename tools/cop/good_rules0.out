@@ -1,0 +1,88 @@
+policy rules read:
+  rule 0: src host 102.50.50.1 => offload bind 0
+  rule 1: dst host 167.32.1.3 => !offload
+  rule 2: host 68.3.127.238 or 68.3.127.239 => offload bind 7 !ddp class 1
+  rule 3: dst net 168.192/16 or 121.101.2/24 => offload class 2
+  rule 4: src host 102.60.60.3 and dst net 10.10/16 => !offload
+  rule 5: dst port 22 or 23 => offload bind 3
+  rule 6: dst port http and dst net 10.4/16 => offload class 4 bind 6
+  rule 7: src and dst port 80 => not offload
+  rule 8: vers 6 => !offload
+  rule 9: src port & 0xfc00 == 0 and listen => offload
+  rule 10: dst port nfs && dscp != 0 && popen=> offload class 3 !!!ddp
+
+classifier program:
+   0    0/66323201%ffffffff  yes->[0]     no->step 1
+   1    4/a7200103%ffffffff  yes->[1]     no->step 2
+   2    0/44037fee%ffffffff  yes->[2]     no->step 3
+   3    0/44037fef%ffffffff  yes->[2]     no->step 4
+   4    4/44037fee%ffffffff  yes->[2]     no->step 5
+   5    4/44037fef%ffffffff  yes->[2]     no->step 6
+   6    4/a8c00000%ffff0000  yes->[3]     no->step 7
+   7    4/79650200%ffffff00  yes->[3]     no->step 8
+   8    0/663c3c03%ffffffff  yes->step 9  no->step 10
+   9    4/0a0a0000%ffff0000  yes->[4]     no->step 10
+  10    8/00000016%0000ffff  yes->[5]     no->step 11
+  11    8/00000017%0000ffff  yes->[5]     no->step 12
+  12    4/0a040000%ffff0000  yes->step 13  no->step 14
+  13    8/00000050%0000ffff  yes->[6]     no->step 14
+  14    8/00500050%ffffffff  yes->[7]     no->step 15
+  15    9/06000000%0f000000  yes->[8]     no->step 16
+  16    8/00000000%fc000000  yes->step 17  no->step 18
+  17    9/00000000%30000000  yes->[9]     no->step 18
+  18    8/00000801%0000ffff  yes->step 19  no->[11]
+  19    9/00000000%00fc0000  yes->[11]     no->step 20
+  20    9/20000000%30000000  yes->[10]     no->[11]
+optimized classifier program:
+   0  0 #1  ffffffff  yes->[0]     no->step 5
+   4    66323201
+   5  4 #1  ffffffff  yes->[1]     no->step 10
+   9    a7200103
+  10  0 #2  ffffffff  yes->[2]     no->step 16
+  14    44037fee
+  15    44037fef
+  16  4 #2  ffffffff  yes->[2]     no->step 22
+  20    44037fee
+  21    44037fef
+  22  4 #1  ffff0000  yes->[3]     no->step 27
+  26    a8c00000
+  27  4 #1  ffffff00  yes->[3]     no->step 32
+  31    79650200
+  32  0 #1  ffffffff  yes->step 37  no->step 42
+  36    663c3c03
+  37  4 #1  ffff0000  yes->[4]     no->step 42
+  41    0a0a0000
+  42  8 #2  0000ffff  yes->[5]     no->step 48
+  46    00000016
+  47    00000017
+  48  4 #1  ffff0000  yes->step 53  no->step 58
+  52    0a040000
+  53  8 #1  0000ffff  yes->[6]     no->step 58
+  57    00000050
+  58  8 #1  ffffffff  yes->[7]     no->step 63
+  62    00500050
+  63  9 #1  0f000000  yes->[8]     no->step 68
+  67    06000000
+  68  8 #1  fc000000  yes->step 73  no->step 78
+  72    00000000
+  73  9 #1  30000000  yes->[9]     no->step 78
+  77    00000000
+  78  8 #1  0000ffff  yes->step 83  no->[11]
+  82    00000801
+  83  9 #1  00fc0000  yes->[11]     no->step 88
+  87    00000000
+  88  9 #1  30000000  yes->[10]     no->[11]
+  92    20000000
+offload settings:
+   0: offload 1, ddp -1, coalesce -1, cong_algo -1, queue 0, class -1, tstamp -1, sack -1
+   1: offload 0, ddp -1, coalesce -1, cong_algo -1, queue -1, class -1, tstamp -1, sack -1
+   2: offload 1, ddp 0, coalesce -1, cong_algo -1, queue 7, class 1, tstamp -1, sack -1
+   3: offload 1, ddp -1, coalesce -1, cong_algo -1, queue -1, class 2, tstamp -1, sack -1
+   4: offload 0, ddp -1, coalesce -1, cong_algo -1, queue -1, class -1, tstamp -1, sack -1
+   5: offload 1, ddp -1, coalesce -1, cong_algo -1, queue 3, class -1, tstamp -1, sack -1
+   6: offload 1, ddp -1, coalesce -1, cong_algo -1, queue 6, class 4, tstamp -1, sack -1
+   7: offload 0, ddp -1, coalesce -1, cong_algo -1, queue -1, class -1, tstamp -1, sack -1
+   8: offload 0, ddp -1, coalesce -1, cong_algo -1, queue -1, class -1, tstamp -1, sack -1
+   9: offload 1, ddp -1, coalesce -1, cong_algo -1, queue -1, class -1, tstamp -1, sack -1
+  10: offload 1, ddp 0, coalesce -1, cong_algo -1, queue -1, class 3, tstamp -1, sack -1
+  11: offload 0, ddp -1, coalesce -1, cong_algo -1, queue -1, class -1, tstamp -1, sack -1

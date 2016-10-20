@@ -1,0 +1,109 @@
+#############################################################
+# Script for MPI communication tests for LSF system         #
+# Platform's LSF is software managing cluster's workload    #
+# Compile mpitest.c with different libraries that support   #
+# Quadrics or Gigabit Ethernet interconnects                #
+# qmpitest tests Quadrics interconnection                   #
+# mpitest tests Gigabit Ethernet interconnection            #
+# Use "bsub < test-mpi.lsf" to submit the jobs              #
+# March 2004, by Ben Huang, huang@csd.uwo.ca                #
+#############################################################
+
+#############  Options for bsub   ################## 
+#!/bin/sh
+#BSUB -o lsf-log/mpi.out 	  # Output 
+#BSUB -e lsf-log/mpi.err 	  # Error log
+#BSUB -J "MPI test"               # Job's name
+#BSUB -n 2                        # Process number
+#BSUB -extsched "nodes=2"         # Node number
+#//BSUB -m "gw28 gw29 gw30 gw31"  # Machine list
+
+####################  Setting  ####################
+
+# Process number
+proc=2
+
+# Working directory
+rundir=$HOME/hpcbench
+
+# Define log directory
+# Results will be stored in $logdir/host1-host2/
+logdir=$rundir/data
+
+# Machine file name
+hostfile="nodes_list"
+
+# Different MPI libraries for Quadrics and GE interconnect
+QUADRIXMPIRUN="prun"
+GEMPIRUN="/pkg/mpich-ge/bin/mpirun"
+
+# Define the test time (Seconds)
+time=2
+
+# Define the repetition of tests
+repeat=10
+
+##################  End of setting  ###############
+
+# Write the machine file
+#rm -f $rundir/$hostfile
+number=1
+host=$hostfile
+while [ -f $rundir/$host ]
+    do
+	host="$hostfile$number"
+	number=`expr $number + 1`
+done
+hostfile=$host
+	
+# Get the node's name host1->Master node, host2->Secondary node
+number=1
+for host in $LSB_HOSTS
+    do
+	if [ $number -eq 1 ]; then
+		host1=$host
+	elif [ $number -eq 2 ]; then 
+		host2=$host
+	fi	
+	echo $host >> $rundir/$hostfile
+	number=`expr $number + 1`
+done
+
+# Create the log directory if not existing
+mkdir -p $logdir
+mkdir -p $logdir/$host1-$host2
+
+###### Quadrics (Quadrix) interconnect ######
+
+prog=qmpitest
+# Fixed size test 
+for size in 10k 100k 100k 1m 10m 100m
+do
+	$QUADRIXMPIRUN -n $proc $rundir/mpi/$prog -sp -o $logdir/$host1-$host2/quadrix-mpi-$size.txt -m $size -r $repeat -t $time
+	wait
+done
+
+# Exponential test (maximum message size 2^27=128M)
+$QUADRIXMPIRUN -n $proc $rundir/mpi/$prog -sp -e 27 -t $time -o $logdir/$host1-$host2/quadrix-mpi-exp.txt
+wait
+
+####### Gigabit Ethernet interconnect #######
+
+prog=mpitest
+# Fixed size test
+for size in 10k 100k 100k 1m 10m 100m
+do
+	$GEMPIRUN -np $proc -machinefile $rundir/$hostfile $rundir/mpi/$prog \
+	    -sp -r $repeat -t $time -m $size -o $logdir/$host1-$host2/ge-mpi-$size.txt
+	wait
+done
+
+# Exponential test
+$GEMPIRUN -np $proc -machinefile $rundir/$hostfile $rundir/mpi/$prog \
+	-sp -e 27 -t $time -o $logdir/$host1-$host2/ge-mpi-exp.txt
+wait
+
+# Clean up the machine file
+rm -f $rundir/$hostfile
+
+echo " MPI tests done!"

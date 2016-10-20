@@ -1,0 +1,14 @@
+LIBCXGB4_UDP_1.0 {
+	global:
+		udp_alloc_dev;
+		udp_dealloc_dev;
+		udp_start_dev;
+		udp_stop_dev;
+		udp_poll_frag;
+		udp_destroy_qp;
+		udp_create_qp;
+		udp_post_send;
+		udp_post_recv;
+		udp_poll_cq;
+	local: *;
+};

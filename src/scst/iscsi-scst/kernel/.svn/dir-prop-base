@@ -1,0 +1,21 @@
+K 10
+svn:ignore
+V 182
+*.ko
+*.ko.cmd
+*.mod.c
+*.o
+*.o.cmd
+*.o.d
+.depend*
+.tmp_versions
+fileio_tgt
+iscsi-scst-adm
+iscsi-scstd
+iscsi_scst_itf_ver.h
+Module.markers
+Module.symvers
+modules.order
+Modules.symvers
+
+END

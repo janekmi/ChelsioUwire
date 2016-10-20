@@ -1,0 +1,7 @@
+Package: libwdtoe-dbg
+Section: libs
+Version: 2.12.0.3 
+Priority: optional
+Architecture: any
+Maintainer: Chelsio Communications <support@chelsio.com>
+Description: libwdtoe debug provides a device-specific userspace debug library for Chelsio driver for use with the WD-TOE drivers.

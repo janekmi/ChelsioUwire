@@ -1,0 +1,240 @@
+#!/bin/sh
+#
+# chkconfig: - 39 35
+# description: Starts and stops the Chelsio iSCSI target
+#
+# config:  /etc/chelsio-iscsi/chiscsi.conf
+
+# Source function library.
+if [ -f /etc/init.d/functions ] ; then
+	. /etc/init.d/functions
+elif [ -f /etc/rc.d/init.d/functions ] ; then
+	. /etc/rc.d/init.d/functions
+else
+	exit 0
+fi
+
+CONFIG=/etc/chelsio-iscsi/chiscsi.conf
+MODLOCK=/var/lock/subsys/chiscsi
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+[ -f /etc/sysconfig/chiscsi ] && . /etc/sysconfig/chiscsi
+
+t3=$(((`lspci | grep "Chelsio Communications Inc S3" | wc -l`)+(`lspci | grep "Chelsio Communications Inc N3" | wc -l`)))
+t4=$(((`lspci | grep "Chelsio Communications Inc T4" | wc -l`)+(`lspci | grep "Chelsio Communications Inc T5" | wc -l`)))
+
+isns_cnt()
+{
+	do_kill=$1
+	cnt=0
+	pids=`ps -C chisns -o pid=`
+	for pid in $pids; do
+		s=`cat /proc/$pid/cmdline`
+		s1=`expr match "$s" 'chisns\([-it]*\)'`
+		if [ "$s1" == "-t" ]; then
+			if [ $do_kill -gt 0 ]; then
+				echo "Stop Target iSNS client, pid=$pid."
+				kill -15 $pid
+			else
+				echo "Target iSNS client, pid=$pid."
+			fi
+			cnt=`expr $cnt + 1`	
+		fi
+	done
+	return $cnt
+}
+
+isns_start()
+{
+	isns_cnt 0
+	cnt=$?
+	if [ $cnt -eq 0 ] && [ -n "$TARGET_ISNS_SERVER" ]; then
+		cmdline="chisns -t server=$TARGET_ISNS_SERVER"
+		if [ -n "$TARGET_ISNS_ID" ]; then
+			cmdline="$cmdline id=$TARGET_ISNS_ID"
+		fi
+		$cmdline > /var/log/chisns_initiator_$TARGET_ISNS_SERVER.log &
+		isns_cnt 0
+		cnt=$?
+		if [ $cnt -gt 0 ]; then
+			action $"Start Target iSNS client, server=$TARGET_ISNS_SERVER" /bin/true
+		else
+			action $"Start Target iSNS client, server=$TARGET_ISNS_SERVER" /bin/false
+		fi
+	fi
+}
+
+isns_status()
+{
+	isns_cnt 0
+	return 0
+}
+
+module_unload()
+{
+	tcnt=(`iscsictl -c | grep "TARGET" | wc -l`)
+	if [ $tcnt -eq 0 ]; then
+		if [ $t3 -gt 0 ]; then
+			echo "Unload Chelsio iSCSI T3 Kernel Module ..."
+			modprobe -r chiscsi_t3 2>/dev/null
+		fi
+		if [ $t4 -gt 0 ]; then
+			echo "Unload Chelsio iSCSI T4 Kernel Module ..."
+			modprobe -r chiscsi_t4 2>/dev/null
+		fi
+		echo "Unload Chelsio iSCSI base Kernel Module ..."
+		modprobe -r chiscsi_base 2>/dev/null
+		rc=$?
+		if [ $rc -eq 0 ]; then
+			action $"Unload Chelsio iSCSI Kernel Module:" /bin/true
+			rm -f $MODLOCK
+		else
+			action $"Unload Chelsio iSCSI Kernel Module:" /bin/false
+		fi
+		return $rc
+	fi
+	return 0
+}
+
+module_load()
+{
+	echo "Load Chelsio iSCSI base Kernel Module ..."
+	modprobe -qf chiscsi_base
+	rc=$?
+	if [ $t3 -gt 0 ]; then
+		echo "Load Chelsio iSCSI T3 Kernel Module ..."
+		modprobe -qf chiscsi_t3
+		rc=$?
+	fi
+	if [ $t4 -gt 0 ]; then
+		echo "Load Chelsio iSCSI T4 Kernel Module ..."
+		modprobe -qf chiscsi_t4
+		rc=$?
+	fi
+	if [ $rc -eq 0 ]; then
+		action $"Loading Chelsio iSCSI Kernel module: " /bin/true
+		touch $MODLOCK
+	else
+		action $"Loading Chelsio iSCSI Kernel module: " /bin/false
+	fi
+
+	return $rc
+}
+
+target_stop()
+{
+	iscsictl -s target=ALL
+}
+
+target_start()
+{
+	cnt=(`iscsictl -c | grep "TARGET" | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		iscsictl -f $CONFIG -S target=ALL
+	fi
+}
+
+target_cnt()
+{
+	cnt=(`iscsictl -c | grep "TARGET" | wc -l`)
+	echo -n "$cnt Chelsio iSCSI Target(s) started."
+}
+
+start_target()
+{
+	echo "Starting Chelsio iSCSI Target Service ..."
+
+	if [ ! -f $CONFIG ]; then
+		action $"Missing Chelsio iSCSI config file $CONFIG." /bin/false
+		return
+	fi
+	cnt=(`grep "TargetName=" $CONFIG | wc -l`)
+	if [ $cnt -eq 0 ]; then
+		action $"NO Target configured in $CONFIG." /bin/false
+		return
+	fi
+
+	if [ ! -f $MODLOCK ]; then
+		module_load
+		rc=$?
+		[ $rc -eq 0 ] || return
+	fi
+	target_start
+	target_cnt
+	echo
+
+	isns_start
+
+	echo -n $"Start Chelsio iSCSI Target Service :"
+	success
+	echo
+}
+	
+stop_target()
+{
+	echo "Stopping Chelsio iSCSI Target Service ..."
+
+	if [ ! -f $MODLOCK ]; then
+		action $"Chelsio iSCSI Target Service already stopped." /bin/true
+		return
+	fi
+
+	isns_cnt 1
+
+	target_stop
+	
+	module_unload
+	rc=$?
+	[ $rc -eq 0 ] || return
+
+	echo -n $"Stop Chelsio iSCSI Target Service :"
+	success
+	echo
+}
+
+restart_target()
+{
+        stop_target
+        start_target
+}
+
+condrestart_target()
+{
+	restart_target
+}
+
+status_target()
+{
+	if [ ! -f $MODLOCK ]; then
+		action $"Chelsio iSCSI Module not loaded." /bin/false
+		return
+	fi
+	
+	isns_cnt 0
+	target_cnt
+	success
+	echo
+}
+
+case "$1" in
+  start)
+        start_target
+        ;;
+  stop)
+        stop_target
+        ;;
+  restart)
+        restart_target
+        ;;
+  condrestart)
+        condrestart_target
+        ;;
+  status)
+        status_target
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|restart|status}"
+        exit 1
+esac
+
+exit 0

@@ -1,0 +1,11 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+chkconfig --add chfcoe
+chkconfig chfcoe off
+
+## Generate new module dependencies.
+depmod
+exit 0

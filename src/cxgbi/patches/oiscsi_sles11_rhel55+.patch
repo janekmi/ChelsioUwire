@@ -1,0 +1,69 @@
+diff --git a/kernel/2.6.14-23_compat.patch b/kernel/2.6.14-23_compat.patch
+index 8936615..b92662d 100644
+--- a/kernel/2.6.14-23_compat.patch
++++ b/kernel/2.6.14-23_compat.patch
+@@ -504,7 +504,7 @@ new file mode 100644
+ index 0000000..e6511d3
+ --- /dev/null
+ +++ b/open_iscsi_compat.h
+-@@ -0,0 +1,399 @@
++@@ -0,0 +1,408 @@
+ +#ifndef OPEN_ISCSI_COMPAT
+ +#define OPEN_ISCSI_COMPAT
+ +
+@@ -540,6 +540,12 @@ index 0000000..e6511d3
+ +#if (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(6, 0))
+ +#define RHELC1	1
+ +#endif
+++#if (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(5, 5))
+++#define RHELC2	1
+++#endif
+++#if (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(5, 6))
+++#define RHELC3 1
+++#endif
+ +#endif
+ +
+ +#ifdef SLE_VERSION_CODE
+@@ -550,11 +556,14 @@ index 0000000..e6511d3
+ +
+ +
+ +#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,19) 
+++#if (defined RHELC3 || defined SLEC1)
+ +struct delayed_work {
+ +	struct work_struct work;
+ +};
+++#endif
+ +
+ +#define cancel_delayed_work(_dwork) cancel_delayed_work(&(_dwork)->work)
+++#undef INIT_DELAYED_WORK
+ +#define INIT_DELAYED_WORK(_work,_func) INIT_WORK(&(_work)->work, _func)
+ +
+ +static inline void INIT_WORK_compat(struct work_struct *work, void *func)
+@@ -718,7 +727,7 @@ index 0000000..e6511d3
+ +#endif
+ + 
+ +#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,22)) && \
+-+				!defined(SLEC1)
+++				!defined(SLEC1) && !defined(RHELC2)
+ +/**
+ + * scsilun_to_int: convert a scsi_lun to an int
+ + * @scsilun:	struct scsi_lun to be converted.
+diff --git a/kernel/2.6.27_compat.patch b/kernel/2.6.27_compat.patch
+index 2406511..9325ac9 100644
+--- a/kernel/2.6.27_compat.patch
++++ b/kernel/2.6.27_compat.patch
+@@ -554,12 +554,12 @@ index 0000000..50ab84d
+ +#endif
+ +
+ +#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,27)
+-+
+++#if !(defined CONFIG_SUSE_KERNEL)
+ +#define BLK_EH_NOT_HANDLED EH_NOT_HANDLED
+ +#define BLK_EH_RESET_TIMER EH_RESET_TIMER
+ +
+ +#define blk_eh_timer_return scsi_eh_timer_return
+-+
+++#endif
+ +#endif
+ +
+ +

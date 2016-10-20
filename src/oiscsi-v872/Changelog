@@ -1,0 +1,114 @@
+open-iscsi-2.0-872 - open-iscsi-2.0.871
+
+Avi Kaplan (2):
+      Remove unused field iscsi_conn from struct iscsi_sw_tcp_conn
+      Change restore_callbacks argument iscsi_sw_tcp_conn to iscsi_conn
+
+Erez Zilber (1):
+      Fix 2.6.14-23_compat.patch to support all RHEL 5.X versions
+
+Hannes Reinecke (2):
+      Allow update of discovery records.
+      Update 2.6.27_compat.patch for SLES 11
+
+Mike Christie (91):
+      Don't kill iscsid if logout from all nodes fail
+      iscsid: fix ISCSI_ERR_INVALID_HOST err handling
+      iscsid: add flag to indicate if driver needs iscsid to set ip
+      iscsid: add be2iscsi template
+      iscsid be2iscsi: add more driver limits
+      iscsid: start iscsid automatically when needed
+      iscsid: fix segfault during session sync up
+      iscsiadm: fix discovery record use
+      iscsi mod: sync to linux-2.6-iscsi tree's 2.6.33 feature window patches
+      iscsid: handle new replacement_timeout values
+      iscsi tools: support tgt reset timeout
+      iscsi-iname: fix misleading help description
+      iscsid: fix iferror log message
+      iscsi mod: Update 2.6.14-23_compat.patch patch
+      iscsiadm: fix login/logout message
+      do not use a semarg in shared-mem for semop calls
+      Fix wrong logs in log.c
+      update 2.6.26 compat patch
+      iscsi tools: Allow empty username for CHAP
+      iscsi ibft/boot: fix net dev loopup
+      iscsistart option to bring up NICs using configuration in iBFT.
+      ibft boot: mv setup nics to fw_entry.c so iscsiadm can use it
+      iscsistart ibft: fix fwparam network cmd
+      iscsid be2iscsi: don't set set_host_ip
+      iscsi tools: merge functions to get net iface name from mac address
+      ibft boot: do not setup nic if offload can be used
+      iscsistart ibft boot: setup iscsi offload during boot
+      ibft boot: remove be2iscsi
+      iscsi tools: idbm/fw function cleanup
+      iscsi tool: trivial fixes
+      ibft boot: add offload ibft support to iscsiadm
+      iscsiadm: only do auto iface setup when iface mode is run
+      ibft boot: add iscsiadm offload ibft rec support
+      doc: add iscsistart man page
+      doc: add iscsi-iname man page
+      ibft boot: fix dev to iface matching
+      offload boot: turn off
+      iscsi tools: nic setup cleanup
+      iscsi tools: fix compile errors
+      iscsi kern: fix 2.6.27 compat patch
+      iscsiadm: add nonpersistent mode to discovery mode
+      iscsi tool: mv idbm_node_setup_defaults to idbm.c
+      iscsi tools: cleanup get_global_string_param use
+      iscsi tools: make config file parser a little smarter.
+      iscsiadm: mv session management functions to new file
+      st discovery: fix reopen max handling
+      iscsid: have iscsid watch for new portals using sendtargets
+      iscsi tools: mv iscsid request helpers to its own file
+      iscsi tools: add str prefix to strings.c functions
+      iscsi tools: use open-isns services
+      iscsi tools: add MaxXmitDataSegmentLength param
+      iscsi tools: do not exit on mem alloc failures during discovery
+      Fix makefile cleanup
+      iscsid: add isns discovery daemon and SCN support
+      iscsid: support discovery daemon auto logout
+      isns: fix compilation
+      iscsi tools: fix null sysfs string handling
+      iscsi tools: fix compilation on s390
+      Update version number to 872
+      iscsi tools: fix MaxXmitDataSegmentLength=0 handling
+      be2iscsi iscsi tool: fix MaxXmitDataSegmentLength handling
+      iscsi tools: be2iscsi: fix initial_r2t_en handling
+      iscsi tools: prep for userspace libiscsi
+      iscsi tools: add log_info helper
+      iscsi tools: fix port handling for iscsiadm commands
+      iscsi tools: fix port handling for iscsiadm commands take 2
+      iscsid: fix discoveryd shutdown
+      iscsi scripts: use iscsiadm -k to shutdown daemon
+      iscsiadm: fix discovery record management
+      iscsid: fix sendtargets discovery daemon CHAP handling
+      iscsiadm: mv disc code to new function
+      iscsiadm: fix disc port handling
+      iscsiadm: add new discovery mode
+      iscsiadm: add isns db support
+      iscsiadm: cleanup default port handling
+      iscsid: use isns discovery rec for isns discoveryd setttings
+      iscsiadm: fix iface mode ENODEV handling
+      iscsiadm: mark discovery mode as depreciated
+      sync to upstream
+      2.6.33 - 34 kernel compat patch
+      2.6.28 - 32 kernel compat patch
+      2.6.27 kernel compat patch
+      2.6.26 kernel compat patch
+      2.6.24 - 25 kernel compat patch
+      2.6.14 - 23 kernel compat patch
+      iscsiadm: fix discovery2 db op return value
+      iscsiadm: print isns recs in discovery mode
+      iscsi boot: add support for iscsi boot sysfs module
+      iscsiadm: rename discovery2 mode as discoverydb
+      iscsiadm: fix boot code compile error
+      iscsiadm: fix iface update/delete return value fix
+
+Ritesh Raj Sarraf (3):
+      fix some spelling errors reported by lintian
+      minor manpage updates
+      Fix CVE-2009-1297
+
+Wulf C. Krueger (1):
+      Use DESTDIR when generating an InitiatorName.
+

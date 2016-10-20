@@ -1,0 +1,1 @@
+taskset 1 ./sniffer -T 20 -s 100 -I 00:07:43:10:7a:08

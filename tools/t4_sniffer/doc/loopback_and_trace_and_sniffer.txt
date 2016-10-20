@@ -1,0 +1,86 @@
+Hi All,
+
+I have tried "tcpdump" over "libpcap" over ibverbs and T4 tracing and it
+works. I believe changes to libpcap was checked in by Divy.
+
+Now, the same "libpcap" will work with T4 loopback and T4 tracing.
+This would be used for tcpdump as a non-destructrutive, zero-copy sniffer.
+
+Please note, this is a quick document providing a craud guide for using T4 as
+a packet sniffer or wire tap. In both modes it is possible interchangably use
+tcpdump or a user app (such as sniffer) to poll the queue and fetch the
+packets.
+
+================================================================================
+How to run mode 1 (Sniff specific traffic):
+================================================================================
+
+Setup for mode 1 (Sniff specific traffic):
+==========================================
+
+Wire tapping requires 2 PC's with one machine having a T4 card. The machines
+should be setup in the following manner:
+
+		Machine A    <---------> Machine  B
+		192.168.1.100		 192.168.1.200
+
+Procedure for setting up mode 1 (Sniff specific traffic):
+=========================================================
+
+Please be sure you installed the correct version of libpcap and load all
+required drivers, refer to the README.txt for instructions.
+
+1) On the DUT start sniffer.
+	./sniffer -T 20 -s 1000 -I <MAC address of interface to sniff>
+
+2) Start traffic on the PEER and watch the sniffer...
+
+================================================================================
+How to run mode 2 (wire tapping):
+================================================================================
+
+Setup for mode 2 (wire tapping):
+================================
+
+Wire tapping requires 3 PC's with one machine having a T4 two ports or more
+card. The machnes should be setup in the following manner:
+
+                            DUT: Machine  B
+PEER: Machine A <-----> (port 0)        (port 1)    <-----> PEER: Machine C
+192.168.1.100           IP-dont-care    IP-dont-care        192.168.1.200
+
+Procedure for setting up mode 2 (wire tapping):
+===============================================
+
+Please be sure you installed the correct version of libpcap and load all
+required drivers, refer to the README.txt for instructions.
+
+1) Setup the DUT to loopback for port 0 and port 1 via indirect register write.
+   the registers are TP_PIO_ADDR (0x7e40) to target the CHANNEL_MAP (0x27) and
+   TP_PIO_DATA (0x7e44) to modify the mapping.
+	cxgbtool eth5 reg 0x7e40=0x27
+	cxgbtool eth5 reg 0x7e44=0x3e100
+
+2) turn on promiscuous for both eth5 and eth2
+	ifconfig <interface 0> promisc
+	ifconfig <interface 1> promisc
+
+3) run tcpdump. It will display the Queue # it will monitor. Use that number
+   to program the MPS_TRC_RSS_CONTROL[QueueNumber] which is the Queue the trace
+   will dump packets too.
+	tcpdump -i <interface>
+
+4) On another xterm enable TrcEN[1:1] and TrcMultiFilter[0] of the register
+   MPS_TRC_CFG(0x9800).
+	cxgbtool <interface> reg 0x9800=0x3
+
+5) Configure the MPS_TRC_RSS_CONTROL(0x9808) bits QueueNumber[15:0] to the
+   channel# given by tcpdump.
+	cxgbtool <interface> reg 0x9808=35
+
+6) Use the following commands to enable Tracing of the RX and TX paths.
+	echo rx0 snaplen=1000 > /sys/kernel/debug/cxgb4/<pci mapping>/trace0
+	echo tx0 snaplen=1000 > /sys/kernel/debug/cxgb4/<pci mapping>/trace1
+
+5) Try ping or ssh between machines A and B. The traffic should successfully
+   make it from end to end and tcpdump should show the tapped traffic.

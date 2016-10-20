@@ -1,0 +1,19 @@
+#!/bin/sh
+ 
+# Exit on error
+set -e
+
+## Workaround for auto-loading infiniband drivers.
+file=/etc/modprobe.d/libcxgb4.conf
+
+lines=`grep -n "^install cxgb4 " $file 2>/dev/null | sed 's/:.*//g' | sort -gr`
+string="# Disabled by Chelsio Makefile on `date`"
+for i in $lines; do
+  sed -i "$i"'s/^install cxgb4\s/#install cxgb4 /' $file
+  let i-=1
+  sed -i "$i"'a'"$string" $file
+done
+
+## Generate new module dependencies.
+depmod
+exit 0

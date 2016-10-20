@@ -1,0 +1,53 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/nightly/conf
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2014-01-16T16:11:23.375204Z
+5197
+bvassche
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+nightly.conf
+file
+
+
+
+
+2014-04-10T13:32:42.000000Z
+8c2b9653901cdaca4973058bf010d103
+2014-01-16T16:11:23.375204Z
+5197
+bvassche
+
+nightly.sendmail
+file
+
+
+
+
+2014-04-10T13:32:42.000000Z
+2b7cd1e7c26690fc0b4bd3f15638072d
+2011-08-17T06:58:21.369513Z
+3813
+bvassche
+has-props
+

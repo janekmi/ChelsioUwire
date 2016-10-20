@@ -1,0 +1,40 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/qla_isp/linux-2.6/build
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2008-07-10T07:05:47.058848Z
+452
+swgruszka
+has-props
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+Makefile
+file
+
+
+
+
+2014-04-10T13:32:33.000000Z
+da9d3d968f1e9832adfcb12a5ec52abf
+2008-07-05T20:19:11.706448Z
+429
+swgruszka
+

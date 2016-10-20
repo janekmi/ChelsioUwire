@@ -1,0 +1,1603 @@
+diff -r 7fa4992f15e5 dev/T4/linux/drv/adapter.h
+--- a/adapter.h	Wed Apr 13 11:06:47 2016 -0700
++++ b/adapter.h	Sat Apr 16 17:24:33 2016 +0530
+@@ -14,6 +14,10 @@
+ #ifndef __T4_ADAPTER_H__
+ #define __T4_ADAPTER_H__
+ 
++#ifndef CONFIG_PO_FCOE
++#define CONFIG_PO_FCOE
++#endif
++
+ #include <linux/pci.h>
+ #include <linux/spinlock.h>
+ #include <linux/interrupt.h>
+@@ -102,6 +106,9 @@
+ 
+ enum {
+ 	MAX_ETH_QSETS = 64,           /* # of Ethernet Tx/Rx queue sets */
++#ifdef CONFIG_PO_FCOE
++	MAX_FCOETH_QSETS = 32,     /* # of FCoE Ethernet Tx/Rx queue sets */
++#endif
+ 	MAX_OFLD_QSETS = 64,          /* # of offload Tx/Rx queue sets */
+ 	MAX_CTRL_QUEUES = NCHAN,      /* # of control Tx queues */
+ 	MAX_RDMA_QUEUES = NCHAN,      /* # of streaming RDMA Rx queues */
+@@ -204,6 +211,9 @@ enum {
+ 	INGQ_EXTRAS = 2,	/* firmware event queue and */
+ 				/*   forwarded interrupts */
+ 	MAX_INGQ = MAX_ETH_QSETS + MAX_OFLD_QSETS
++#ifdef CONFIG_PO_FCOE
++		   + MAX_FCOETH_QSETS
++#endif	
+ 		   + MAX_RDMA_QUEUES + MAX_RDMA_CIQS + MAX_ISCSI_QUEUES
+ 		   + MAX_HFILTER_QUEUES + MAX_FAILOVER_QUEUES
+ 		   + INGQ_EXTRAS,
+@@ -468,6 +478,13 @@ struct sge_eth_txq {                /* s
+ #ifdef CONFIG_CXGB4_DCB
+ 	u8 dcb_prio;                /* DCB Priority bound to queue */
+ #endif
++#ifdef CONFIG_PO_FCOE
++	struct adapter *adap;
++	struct sk_buff_head sendq;  /* list of backpressured packets */
++	struct tasklet_struct qresume_tsk; /* restarts the queue */
++	unsigned long tslast_pkt;   /* Time stamp of last transmited packet */
++	u8 full;                    /* the Tx ring is full */
++#endif
+ 	unsigned long tso;          /* # of TSO requests */
+ 	unsigned long tx_cso;       /* # of Tx checksum offloads */
+ 	unsigned long vlan_ins;     /* # of Tx VLAN insertions */
+@@ -510,11 +527,17 @@ struct sge {
+ #if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
+ 	struct sge_eth_txq ptptxq;
+ #endif
++#ifdef CONFIG_PO_FCOE
++	struct sge_eth_txq fcoetxq[MAX_FCOETH_QSETS];
++#endif	
+ 	struct sge_ofld_txq ofldtxq[MAX_OFLD_QSETS];
+ 	struct sge_ctrl_txq ctrlq[MAX_CTRL_QUEUES];
+ 
+ 	struct sge_eth_rxq ethrxq[MAX_ETH_QSETS];
+ 	struct sge_eth_rxq traceq[MAX_TRACE_QUEUES];
++#ifdef CONFIG_PO_FCOE
++	struct sge_eth_rxq fcoerxq[MAX_FCOETH_QSETS];
++#endif	
+ 	struct sge_ofld_rxq ofldrxq[MAX_OFLD_QSETS];
+ 	struct sge_ofld_rxq rdmarxq[MAX_RDMA_QUEUES];
+ 	struct sge_ofld_rxq rdmaciq[MAX_RDMA_CIQS];
+@@ -529,6 +552,8 @@ struct sge {
+ 
+ 	u16 max_ethqsets;           /* # of available Ethernet queue sets */
+ 	u16 ethqsets;               /* # of active Ethernet queue sets */
++	u16 max_fcoeqsets;           /* # of available FCoE queue sets */
++	u16 fcoeqsets;              /* # of active FCoE queue sets */
+ 	u16 ethtxq_rover;           /* Tx queue to clean up next */
+ 	u16 ofldqsets;              /* # of active offload queue sets */
+ 	u16 rdmaqs;                 /* # of available RDMA Rx queues */
+@@ -538,6 +563,9 @@ struct sge {
+ 	u16 nfailoverq;		    /* # of available failover Rx queues */
+ 	u16 nvxlanq;		    /* # of vxlan loopback Tx queues */
+ 	u16 max_ofldqsets;		/* # of available offload queue sets*/
++#ifdef CONFIG_PO_FCOE
++	u16 fcoe_rxq[MAX_FCOETH_QSETS];
++#endif
+ 	u16 ofld_rxq[MAX_OFLD_QSETS];
+ 	u16 rdma_rxq[MAX_RDMA_QUEUES];
+ 	u16 rdma_ciq[MAX_RDMA_CIQS];
+@@ -565,6 +593,9 @@ struct sge {
+ };
+ 
+ #define for_each_ethrxq(sge, i) for (i = 0; i < (sge)->ethqsets; i++)
++#ifdef CONFIG_PO_FCOE
++#define for_each_fcoerxq(sge, i) for (i = 0; i < (sge)->fcoeqsets; i++)
++#endif
+ #define for_each_ofldrxq(sge, i) for (i = 0; i < (sge)->ofldqsets; i++)
+ #define for_each_rdmarxq(sge, i) for (i = 0; i < (sge)->rdmaqs; i++)
+ #define for_each_rdmaciq(sge, i) for (i = 0; i < (sge)->rdmaciqs; i++)
+@@ -1311,6 +1342,14 @@ int t4_sge_alloc_ctrl_txq(struct adapter
+ 			  unsigned int cmplqid);
+ int t4_sge_alloc_ofld_txq(struct adapter *adap, struct sge_ofld_txq *txq,
+ 			  struct net_device *dev, unsigned int iqid);
++#ifdef CONFIG_PO_FCOE
++int t4_sge_alloc_fcoe_rxq(struct adapter *adap, struct sge_rspq *iq, bool fwevtq,
++		     struct net_device *dev, int intr_idx,
++		     struct sge_fl *fl, rspq_handler_t hnd, int cong);
++int t4_sge_alloc_fcoe_txq(struct adapter *adap, struct sge_eth_txq *txq,
++			 struct net_device *dev, struct netdev_queue *netdevq,
++			 unsigned int iqid);
++#endif
+ irqreturn_t t4_sge_intr_msix(int irq, void *cookie);
+ int t4_sge_init(struct adapter *adap);
+ void t4_sge_init_tasklet(struct adapter *adap);
+diff -r 7fa4992f15e5 dev/T4/linux/drv/cxgb4_dcb.c
+--- a/cxgb4_dcb.c	Wed Apr 13 11:06:47 2016 -0700
++++ b/cxgb4_dcb.c	Sat Apr 16 17:24:33 2016 +0530
+@@ -400,6 +400,11 @@ void cxgb4_dcb_handle_fw_update(struct a
+ 		ap->sel_field = fwap->sel_field;
+ 		ap->protocolid = be16_to_cpu(fwap->protocolid);
+ 		dcb->msgs |= CXGB4_DCB_FW_APP_ID;
++#ifdef CONFIG_PO_FCOE
++		if (ap->protocolid == ETH_P_FCOE)
++			dcb_fcoe_txq_prio_enable(dev, true);
++#endif
++
+ 		break;
+ 	}
+ 
+diff -r 7fa4992f15e5 dev/T4/linux/drv/cxgb4_debugfs.c
+--- a/cxgb4_debugfs.c	Wed Apr 13 11:06:47 2016 -0700
++++ b/cxgb4_debugfs.c	Sat Apr 16 17:24:33 2016 +0530
+@@ -1217,6 +1217,9 @@ static int sge_stats_show(struct seq_fil
+ {
+ 	struct adapter *adap = seq->private;
+ 	int eth_entries = DIV_ROUND_UP(adap->sge.ethqsets, 4);
++#ifdef CONFIG_PO_FCOE
++	int fcoe_entries = DIV_ROUND_UP(adap->sge.fcoeqsets, 4);
++#endif	
+ 	int toe_entries = DIV_ROUND_UP(adap->sge.ofldqsets, 4);
+ 	int rdma_entries = DIV_ROUND_UP(adap->sge.rdmaqs, 4);
+ 	int rdma_ciq_entries = DIV_ROUND_UP(adap->sge.rdmaciqs, 4);
+@@ -1267,6 +1270,28 @@ static int sge_stats_show(struct seq_fil
+ 		R("FLMapErr:", fl.mapping_err);
+ 		R("FLLow:", fl.low);
+ 		R("FLStarving:", fl.starving);
++#ifdef CONFIG_PO_FCOE
++	} else if ((r -= eth_entries) < fcoe_entries) {
++		const struct sge_eth_rxq *qs = &adap->sge.fcoerxq[r * 4];
++		const struct sge_eth_txq *tx = &adap->sge.fcoetxq[r * 4];
++		int n = min(4, adap->sge.fcoeqsets - 4 * r);
++
++		S("QType:", "FCOE");
++		R("RxPackets:", stats.pkts);
++		R("RxCSO:", stats.rx_cso);
++		R("VLANxtract:", stats.vlan_ex);
++		R("LROmerged:", stats.lro_merged);
++		R("LROpackets:", stats.lro_pkts);
++		R("RxDrops:", stats.rx_drops);
++		T("TxPkts:", q.txp);
++		T("TxQFull:", q.stops);
++		T("TxQRestarts:", q.restarts);
++		T("TxMapErr:", mapping_err);
++		R("FLAllocErr:", fl.alloc_failed);
++		R("FLLrgAlcErr:", fl.large_alloc_failed);
++		R("FLLow:", fl.low);
++		R("FLstarving:", fl.starving);
++#endif		
+ 	} else {
+ 		if (!(is_hashfilter(adap) && is_t5(adap->params.chip))) {
+ 			if ((r -= eth_entries) < toe_entries) {
+diff -r 7fa4992f15e5 dev/T4/linux/drv/cxgb4_fcoe.c
+--- a/cxgb4_fcoe.c	Wed Apr 13 11:06:47 2016 -0700
++++ b/cxgb4_fcoe.c	Sat Apr 16 17:24:33 2016 +0530
+@@ -17,6 +17,7 @@
+ #include <linux/if_vlan.h>
+ #include <linux/if_ether.h>
+ #include <linux/gfp.h>
++#include <linux/export.h>
+ #include <scsi/scsi_cmnd.h>
+ #include <scsi/scsi_device.h>
+ #include <scsi/fc/fc_fs.h>
+@@ -353,9 +354,9 @@ static int cxgb_fcoe_alloc_tid(struct po
+ 		return 1;
+ 
+ 	wait_for_completion(fcoe->cmpl);
+-
++#if 0
+ 	reinit_completion(fcoe->cmpl);
+-
++#endif
+ 	if (!(ddp->flags & CXGB_FCOE_DDP_TID_VALID))
+ 		return 1;
+ 
+@@ -418,6 +419,7 @@ static inline unsigned int pages2ppods(u
+ int cxgb_fcoe_ddp_setup(struct net_device *netdev, u16 xid,
+ 			struct scatterlist *sgl, unsigned int sgc)
+ {
++#if 0
+ 	struct port_info *pi;
+ 	struct adapter *adap;
+ 	struct cxgb_fcoe *fcoe;
+@@ -532,6 +534,7 @@ int cxgb_fcoe_ddp_setup(struct net_devic
+ 
+ out_noddp:
+ 	pci_unmap_sg(adap->pdev, sgl, sgc, DMA_FROM_DEVICE);
++#endif
+ 	return 0;
+ }
+ 
+@@ -707,6 +710,9 @@ void cxgb_fcoe_init_ddp(struct adapter *
+ 	fcoe_ddp_size = adap->vres.fcoe_nppods * CXGB_FCOE_PPOD_SIZE;
+ 	fcoe_ddp_start = adap->vres.ddp.start + adap->vres.ddp.size;
+ 
++	adap->vres.fcoe.size = fcoe_ddp_size;
++	adap->vres.fcoe.start = fcoe_ddp_start;
++
+ 	dev_info(adap->pdev_dev, "TOE ddp start:0x%x size:%d"
+ 		 " nppods:%d\n", adap->vres.ddp.start,
+ 		 adap->vres.ddp.size, adap->vres.toe_nppods);
+@@ -728,4 +734,264 @@ void cxgb_fcoe_exit_ddp(struct adapter *
+ 	kfree(adap->vres.tid2xid);
+ }
+ 
++/*
++ * Configure the exact and hash address filters to handle a FCOE port's 
++ * multicast and secondary unicast MAC addresses.
++ */
++int cxgb4_fcoe_set_mac(const struct net_device *dev, const u8 *addr, u16 *idx,
++		bool clear)
++{
++	u64 mhash = 0;
++	u64 uhash = 0;
++	int ret;
++	const struct port_info *pi = netdev_priv(dev);
++	struct adapter *adapter = pi->adapter;
++	u16 viid = pi->fcoe.viid;
++
++	if (clear) {
++		struct fw_vi_mac_cmd c;
++
++		size_t len16 = DIV_ROUND_UP(offsetof(struct fw_vi_mac_cmd,
++				     u.exact[1]), 16);
++		struct fw_vi_mac_exact *p;
++
++		memset(&c, 0, sizeof(c));
++		c.op_to_viid = cpu_to_be32(V_FW_CMD_OP(FW_VI_MAC_CMD) |
++				     F_FW_CMD_REQUEST |
++				     F_FW_CMD_WRITE |
++				     V_FW_CMD_EXEC(clear) |
++				     V_FW_VI_MAC_CMD_VIID(viid));
++		c.freemacs_to_len16 =
++				cpu_to_be32(V_FW_CMD_LEN16(len16));
++
++		p = c.u.exact; 
++		p->valid_to_idx = cpu_to_be16(
++				F_FW_VI_MAC_CMD_VALID |
++				V_FW_VI_MAC_CMD_IDX(FW_VI_MAC_MAC_BASED_FREE));
++		memcpy(p->macaddr, addr, sizeof(p->macaddr));
++
++		ret = t4_wr_mbox_meat(adapter, adapter->mbox, &c, sizeof(c), &c,
++					true);
++		return ret;
++	}
++
++	ret = t4_alloc_mac_filt(adapter, adapter->mbox, viid, clear,
++				1, &addr, idx, &uhash, false);
++	if (ret < 0) {
++		return ret;
++	}
++
++	return t4_set_addr_hash(adapter, adapter->mbox, viid, uhash != 0,
++				uhash | mhash, false);
++}
++EXPORT_SYMBOL(cxgb4_fcoe_set_mac);
++
++/**
++ *	setup_rss - configure RSS
++ *	@adapter: the adapter
++ *
++ *	Sets up RSS to distribute packets to multiple receive queues.  We
++ *	configure the RSS CPU lookup table to distribute to the number of HW
++ *	receive queues, and the response queue lookup table to narrow that
++ *	down to the response queues actually configured for each port.
++ *	We always configure the RSS mapping for all ports since the mapping
++ *	table has plenty of entries.
++ */
++static int fcoe_setup_rss(struct adapter *adapter)
++{
++	int pidx;
++
++	for_each_port(adapter, pidx) {
++		struct port_info *pi = adap2pinfo(adapter, pidx);
++		struct sge_eth_rxq *rxq = 
++			&adapter->sge.fcoerxq[pi->fcoe.first_qset];
++		u16 rss[MAX_INGQ];
++		int qs, err;
++
++		for (qs = 0; qs < pi->fcoe.nqsets; qs++)
++			rss[qs] = rxq[qs].rspq.abs_id;
++
++		err = t4_config_rss_range(adapter, adapter->mbox, pi->fcoe.viid,
++					  0, pi->rss_size, rss, pi->fcoe.nqsets);
++		/*
++		 * If Tunnel All Lookup isn't specified in the global RSS
++		 * Configuration, then we need to specify a default Ingress
++		 * Queue for any ingress packets which aren't hashed.  We'll
++		 * use our first ingress queue ...
++		 */
++		if (!err)
++			err = t4_config_vi_rss(adapter, adapter->mbox, 
++					pi->fcoe.viid,
++					F_FW_RSS_VI_CONFIG_CMD_IP6FOURTUPEN |
++					F_FW_RSS_VI_CONFIG_CMD_IP6TWOTUPEN |
++					F_FW_RSS_VI_CONFIG_CMD_IP4FOURTUPEN |
++					F_FW_RSS_VI_CONFIG_CMD_IP4TWOTUPEN |
++					F_FW_RSS_VI_CONFIG_CMD_UDPEN,
++					rss[0]);
++		if (err)
++			return err;
++		
++		pi->fcoe.flags |= CXGB_FCOE_RSS_DONE;
++	}
++	return 0;
++}
++
++/**
++ *	fcoe_vi_start - enable fcoe vi
++ *	@dev: the port to enable
++ *
++ *	Performs the MAC actions needed to enable a VI.
++ */
++static int fcoe_vi_start(const struct net_device *dev)
++{
++	int ret;
++	struct port_info *pi = netdev_priv(dev);
++	struct adapter *adapter = pi->adapter;
++
++	if (!(pi->fcoe.flags & CXGB_FCOE_RSS_DONE)) {
++		ret = fcoe_setup_rss(adapter);
++		if (ret)
++			return ret;
++	}	
++
++	/*
++	 * We do not set address filters and promiscuity here, the stack does
++	 * that step explicitly.
++	 */
++	ret = t4_set_rxmode(adapter, adapter->mbox, pi->fcoe.viid, 2128, 0, 0,
++			    0, 1, true);
++	if (ret == 0) {
++		ret = t4_change_mac(adapter, adapter->mbox, pi->fcoe.viid,
++				    pi->fcoe.xact_addr_filt, pi->fcoe.dev_addr, true,
++				    true);
++		if (ret >= 0) {
++			pi->fcoe.xact_addr_filt = ret;
++			ret = 0;
++		}
++	}
++
++	if (ret == 0)
++		ret = t4_enable_vi_params(adapter, adapter->mbox, pi->fcoe.viid,
++					  true, true, false);
++	return ret;
++}
++	
++#ifdef CONFIG_CXGB4_DCB
++/*
++ * Set up / tear down Data Center Bridging Priority mapping for a fcoe txq.
++ */
++void dcb_fcoe_txq_prio_enable(struct net_device *dev, int enable)
++{
++	struct port_info *pi = netdev_priv(dev);
++	struct adapter *adap = pi->adapter;
++	struct sge_eth_txq *fcoe_txq = &adap->sge.fcoetxq[pi->fcoe.first_qset];
++	u32 prio = 0xffffffff;
++	int i;
++
++
++	/* select fcoe priority */
++	for (i = 0; i < CXGB4_MAX_DCBX_APP_SUPPORTED && enable; i++) {
++		struct app_priority *ap = &pi->dcb.app_priority[i];
++
++		if (ap->protocolid == ETH_P_FCOE) {
++			prio = ilog2(ap->user_prio_map);
++			break;
++		}	
++	}
++
++	/* fcoe priority not found */
++	if (enable && prio == 0xffffffff)
++		return;
++
++	/* set fcoe priority on txq*/
++	for (i = 0; i < pi->fcoe.nqsets; i++, fcoe_txq++) {
++		u32 name, value;
++		int err;
++
++		name = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DMAQ) |
++			V_FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DMAQ_EQ_DCBPRIO_ETH)
++			| V_FW_PARAMS_PARAM_YZ(fcoe_txq->q.cntxt_id));
++		value = enable ? prio : 0xffffffff;
++
++		/*
++		 * Since we can be called while atomic (from "interrupt
++		 * level") we need to issue the Set Parameters Commannd
++		 * without sleeping (timeout < 0).
++		 */
++		err = t4_set_params_timeout(adap, adap->mbox, adap->pf, 0, 1,
++					    &name, &value,
++					    -FW_CMD_MAX_TIMEOUT);
++		if (err)
++			CH_ERR(adap, "Can't %s DCB Priority on "
++			       "port %d, TX Queue %d: err=%d\n",
++			       enable ? "set" : "unset",
++			       pi->port_id, i, -err);
++
++		fcoe_txq->dcb_prio = value;
++	}
++/*	
++	if (adap->uld_handle[CXGB4_ULD_FCOE])
++		ulds[CXGB4_ULD_FCOE].control(adap->uld_handle[CXGB4_ULD_FCOE],
++					     CXGB4_CONTROL_DCB_UPDATE, dev);
++*/					     
++	printk(KERN_INFO "%s: FCOE DCB Priority %d on port %d %s\n", dev->name, 
++			prio, pi->port_id, enable ? "set" : "unset");
++}
++#endif /* CONFIG_CXGB4_DCB */
++
++int cxgb4_fcoe_enable(const struct net_device *dev, bool enable)
++{
++	int ret;
++	struct port_info *pi = netdev_priv(dev);
++	struct adapter *adapter = pi->adapter;
++
++	if (enable) {
++		ret = fcoe_vi_start(dev);
++		pi->fcoe.flags |= CXGB_FCOE_ENABLED;
++	}
++	else  {
++		ret = t4_enable_vi(adapter, adapter->mbox, pi->fcoe.viid,
++				  false, false);
++		pi->fcoe.flags &= ~CXGB_FCOE_ENABLED;
++	}	
++	return ret;
++}
++EXPORT_SYMBOL(cxgb4_fcoe_enable);
++
++int setup_fcoe_dev(struct adapter *adapter)
++{
++	u8 addr[6];
++	int ret = 0, i, j = 0;
++
++	for_each_port(adapter, i) {
++		unsigned int rss_size;
++		struct port_info *pi = adap2pinfo(adapter, i);
++
++		while ((adapter->params.portvec & (1 << j)) == 0)
++			j++;
++
++		ret = t4_alloc_vi_func(adapter, adapter->mbox, j, adapter->pf, 0,
++				1, addr, &rss_size, FW_VI_FUNC_OPENFCOE, 0);
++		if (ret < 0)
++			return ret;
++
++		pi->fcoe.viid = ret;
++		pi->fcoe.xact_addr_filt = -1;
++		adapter->vres.fcoe_viid[i] = ret;
++	//	p->rss_size = rss_size;
++	//	t4_os_set_hw_addr(adap, i, addr);
++		memcpy(pi->fcoe.dev_addr, addr, ETH_ALEN);
++		j++;
++	}
++	return 0;
++}	
++
++void cleanup_fcoe_dev(struct adapter *adapter, struct port_info *pi)
++{
++	if (pi) {
++		if (pi->fcoe.viid)
++			t4_free_vi(adapter, adapter->mbox, adapter->pf,
++				   0, pi->fcoe.viid);
++	}
++}
+ #endif /* CONFIG_PO_FCOE */
+diff -r 7fa4992f15e5 dev/T4/linux/drv/cxgb4_fcoe.h
+--- a/cxgb4_fcoe.h	Wed Apr 13 11:06:47 2016 -0700
++++ b/cxgb4_fcoe.h	Sat Apr 16 17:24:33 2016 +0530
+@@ -14,6 +14,10 @@
+ 
+ #ifdef CONFIG_PO_FCOE
+ 
++#ifndef CONFIG_PO_FCOE
++#define CONFIG_PO_FCOE
++#endif
++
+ #include <linux/pci.h>
+ #include <linux/spinlock.h>
+ #include <linux/interrupt.h>
+@@ -72,13 +76,19 @@ struct cxgb_fcoe_ddp {
+ 
+ /* fcoe flags */
+ enum {
+-	CXGB_FCOE_ENABLED     = (1 << 0),
++	CXGB_FCOE_ENABLED	= (1 << 0),
++	CXGB_FCOE_RSS_DONE	= (1 << 1),
+ };
+ 
+ struct cxgb_fcoe {
+ 	u8	flags;
++	u8     	nqsets;                /* # of qsets */
++	u8      first_qset;            /* index of first fcoe qset */
++	u16    	viid;
++	s16	xact_addr_filt;
+ 	struct completion *cmpl;
+ 	struct	cxgb_fcoe_ddp ddp[CXGB_FCOE_MAX_XCHGS_PORT];
++	u8	dev_addr[ETH_ALEN];
+ };
+ 
+ struct sge;
+@@ -93,10 +103,18 @@ int cxgb_fcoe_ddp_setup(struct net_devic
+ int cxgb_fcoe_ddp_done(struct net_device *netdev, u16 xid);
+ int cxgb_fcoe_enable(struct net_device *netdev);
+ int cxgb_fcoe_disable(struct net_device *netdev);
++
++#ifdef CONFIG_CXGB4_DCB
++void dcb_fcoe_txq_prio_enable(struct net_device *dev, int enable);
++#endif
++
+ void cxgb_fcoe_init_ddp(struct adapter *);
+ void cxgb_fcoe_exit_ddp(struct adapter *);
+ void cxgb_fcoe_cpl_act_open_rpl(struct adapter *, unsigned int,
+ 				unsigned int, unsigned int);
+ bool cxgb_fcoe_sof_eof_supported(struct adapter *, struct sk_buff *);
++int setup_fcoe_dev(struct adapter *adapter);
++int init_fcoe_dev(struct adapter *adapter);
++void cleanup_fcoe_dev(struct adapter *adapter, struct port_info *pi);
+ #endif /* CONFIG_PO_FCOE */
+ #endif /* __CXGB4_FCOE_H__ */
+diff -r 7fa4992f15e5 dev/T4/linux/drv/cxgb4_main.c
+--- a/cxgb4_main.c	Wed Apr 13 11:06:47 2016 -0700
++++ b/cxgb4_main.c	Sat Apr 16 17:24:33 2016 +0530
+@@ -487,6 +487,9 @@ static void dcb_tx_queue_prio_enable(str
+ 		else
+ 			txq->dcb_prio = value;
+ 	}
++#ifdef CONFIG_PO_FCOE	
++	dcb_fcoe_txq_prio_enable(dev, enable);
++#endif
+ }
+ #endif /* CONFIG_CXGB4_DCB */
+ 
+@@ -841,11 +844,26 @@ static int fwevtq_handler(struct sge_rsp
+ 		struct sge_txq *txq;
+ 
+ 		txq = q->adap->sge.egr_map[qid - q->adap->sge.egr_start];
++			
++#ifdef CONFIG_PO_FCOE
++		if ((u8 *)txq < (u8 *)q->adap->sge.fcoetxq) {
++			struct sge_eth_txq *eq;
++
++			eq = container_of(txq, struct sge_eth_txq, q);
++			t4_sge_coalesce_handler(q->adap, eq);	
++		} else if ((u8 *)txq < (u8 *)q->adap->sge.ofldtxq) {
++			struct sge_eth_txq *eq;
++
++			txq->restarts++;
++			eq = container_of(txq, struct sge_eth_txq, q);
++			tasklet_schedule(&eq->qresume_tsk);
++#else		
+ 		if ((u8 *)txq < (u8 *)q->adap->sge.ofldtxq) {
+ 			struct sge_eth_txq *eq;
+ 
+ 			eq = container_of(txq, struct sge_eth_txq, q);
+ 			t4_sge_coalesce_handler(q->adap, eq);
++#endif			
+ 		} else {
+ 			struct sge_ofld_txq *oq;
+ 
+@@ -995,6 +1013,30 @@ static int uldrx_handler(struct sge_rspq
+ 		rxq->stats.pkts++;
+ 	return 0;
+ }
++
++#ifdef CONFIG_PO_FCOE
++/**
++ *	uldrx_fcoe_handler - response queue handler for ULD queues
++ *	@q: the response queue that received the packet
++ *	@rsp: the response queue descriptor holding the offload message
++ *	@gl: the gather list of packet fragments
++ *
++ *	Deliver an ingress offload packet to a ULD.  All processing is done by
++ *	the ULD, we just maintain statistics.
++ */
++static int uldrx_fcoe_handler(struct sge_rspq *q, const __be64 *rsp,
++			 const struct pkt_gl *gl)
++{
++	struct sge_eth_rxq *rxq = container_of(q, struct sge_eth_rxq, rspq);
++
++	if (cxgb4_ulds[q->uld].rx_handler(q->adap->uld_handle[q->uld], rsp, gl)) {
++		rxq->stats.rx_drops++;
++		return -1;
++	}
++	rxq->stats.pkts++;
++	return 0;
++}
++#endif
+ #endif
+ 
+ static void cxgb_disable_msi(struct adapter *adapter)
+@@ -1047,6 +1089,15 @@ static void name_msix_vecs(struct adapte
+ 			snprintf(adap->msix_info[msi_idx].desc, n,
+ 				 "%s (queue %d)", d->name, i);
+ 	}
++#ifdef CONFIG_PO_FCOE
++	for_each_port(adap, j) {
++		struct net_device *d = adap->port[j];
++		const struct port_info *pi = netdev_priv(d);
++		for (i = 0; i < pi->fcoe.nqsets; i++, msi_idx++)
++			snprintf(adap->msix_info[msi_idx].desc, n,
++				 "%s (fcoe%d)", adap->name, i);
++	}
++#endif
+ 
+ 	if (is_hashfilter(adap) && is_t5(adap->params.chip)) {
+ 		for_each_tracerxq(&adap->sge, i) {
+@@ -1088,6 +1139,9 @@ static int request_msix_queue_irqs(struc
+ 	int msi_index = 2;
+ #ifdef CONFIG_CHELSIO_T4_OFFLOAD
+ 	int ofldqidx = 0, rdmaqidx = 0, rdmaciqqidx = 0, iscsiqidx = 0;
++#ifdef CONFIG_PO_FCOE	
++	int fcoeqidx = 0;
++#endif
+ #endif
+ 	int traceqidx = 0;
+ 
+@@ -1105,6 +1159,17 @@ static int request_msix_queue_irqs(struc
+ 			goto unwind;
+ 		msi_index++;
+ 	}
++#ifdef CONFIG_PO_FCOE
++	for_each_fcoerxq(s, fcoeqidx) {
++		err = request_irq(adap->msix_info[msi_index].vec,
++				  t4_sge_intr_msix, 0,
++				  adap->msix_info[msi_index].desc,
++				  &s->fcoerxq[fcoeqidx].rspq);
++		if (err)
++			goto unwind;
++		msi_index++;
++	}
++#endif
+ 
+ 	if (is_hashfilter(adap) && is_t5(adap->params.chip)) {
+ 		for_each_tracerxq(s, traceqidx) {
+@@ -1185,6 +1250,11 @@ unwind:
+ 	while (--ofldqidx >= 0)
+ 		free_irq(adap->msix_info[--msi_index].vec,
+ 			 &s->ofldrxq[ofldqidx].rspq);
++#ifdef CONFIG_PO_FCOE
++	while (--fcoeqidx >= 0)
++		free_irq(adap->msix_info[--msi_index].vec,
++			 &s->fcoerxq[fcoeqidx].rspq);
++#endif
+ #endif
+ 	while (--traceqidx >= 0)
+ 		free_irq(adap->msix_info[--msi_index].vec,
+@@ -1208,6 +1278,10 @@ static void free_msix_queue_irqs(struct 
+ 		for_each_tracerxq(s, i)
+ 			free_irq(adap->msix_info[msi_index++].vec, &s->traceq[i].rspq);
+ #ifdef CONFIG_CHELSIO_T4_OFFLOAD
++#ifdef CONFIG_PO_FCOE
++	for_each_fcoerxq(s, i) 
++		free_irq(adap->msix_info[msi_index++].vec, &s->fcoerxq[i].rspq);
++#endif
+ 	for_each_ofldrxq(s, i)
+ 		free_irq(adap->msix_info[msi_index++].vec, &s->ofldrxq[i].rspq);
+ 	for_each_rdmarxq(s, i)
+@@ -1412,7 +1486,9 @@ static int setup_sge_queues(struct adapt
+ {
+ 	int err, msi_idx, i, j;
+ 	struct sge *s = &adap->sge;
+-
++#ifdef CONFIG_PO_FCOE
++	int idx = 0;
++#endif
+ 	bitmap_zero(s->starving_fl, s->egr_sz);
+ 	bitmap_zero(s->txq_maperr, s->egr_sz);
+ 
+@@ -1501,6 +1577,36 @@ freeout:	t4_free_sge_resources(adap);
+ 		}
+ #endif
+ 	}
++#ifdef CONFIG_PO_FCOE
++	for_each_port(adap, i) {
++		struct net_device *dev = adap->port[i];
++		struct port_info *pi = netdev_priv(dev);
++		struct sge_eth_rxq *q = &s->fcoerxq[pi->fcoe.first_qset];
++		struct sge_eth_txq *t = &s->fcoetxq[pi->fcoe.first_qset];
++
++		for (j = 0; j < pi->fcoe.nqsets; j++, q++) {
++			if (msi_idx > 0)
++				msi_idx++;
++			err = t4_sge_alloc_fcoe_rxq(adap, &q->rspq, false, dev,
++					       msi_idx, &q->fl,
++					       uldrx_fcoe_handler,
++					       1 << pi->tx_chan);
++			if (err)
++				goto freeout;
++			s->fcoe_rxq[idx++] = q->rspq.abs_id;
++			q->rspq.idx = j;
++			memset(&q->stats, 0, sizeof(q->stats));
++		}
++		for (j = 0; j < pi->fcoe.nqsets; j++, t++) {
++			err = t4_sge_alloc_fcoe_txq(adap, t, dev,
++					NULL /* netdev_get_tx_queue(dev, j) */,
++					s->fw_evtq.cntxt_id);
++			if (err)
++				goto freeout;
++		}
++	}
++
++#endif	
+ 
+ 	if (is_hashfilter(adap) && is_t5(adap->params.chip)) {
+ 		j = s->ntraceq / adap->params.nports;
+@@ -3508,6 +3614,20 @@ static void uld_attach(struct adapter *a
+ 		lli.rxq_ids = adap->sge.ofld_rxq;
+ 		lli.nrxq = adap->sge.ofldqsets;
+ 	}
++#ifdef CONFIG_PO_FCOE
++	else if (uld == CXGB4_ULD_FCOE) {
++		lli.rxq_ids = adap->sge.fcoe_rxq;
++		lli.nrxq = adap->sge.fcoeqsets;
++		for_each_port(adap, i) {
++			struct net_device *dev = adap->port[i];
++			struct port_info *pi = netdev_priv(dev);
++			memcpy(&lli.vr->fcoe_mac[i], 
++				pi->fcoe.dev_addr, 6);
++			adap->vres.fcoe_nqsets[i] = pi->fcoe.nqsets;
++		}
++	}
++	lli.fw_evtq_cntxt_id = adap->sge.fw_evtq.cntxt_id;
++#endif
+ 	lli.ntxq = adap->sge.ofldqsets;
+ 	lli.nchan = adap->params.nports;
+ 	lli.nports = adap->params.nports;
+@@ -6269,6 +6389,29 @@ static void cfg_queues(struct adapter *a
+ 	s->ethqsets = qidx;
+ 	s->max_ethqsets = qidx;   /* MSI-X may lower it later */
+ 
++#ifdef CONFIG_PO_FCOE
++	/*
++	 * For FCOE we default to 1 queue per non-10G port and up to # of 
++	 * cores queues per 10G port.
++	 */
++	qidx = 0;
++	for_each_port(adap, i) {
++		struct port_info *pi = adap2pinfo(adap, i);
++
++		pi->fcoe.first_qset = qidx;
++#if 0		
++		pi->nqsets = (is_x_10g_port(&pi->link_cfg) ||
++			      mq_with_1G || is_fpga(adap->params.chip))
++				? q10g : 1;
++		if (pi->nqsets > pi->rss_size)
++			pi->nqsets = pi->rss_size;
++#endif
++		pi->fcoe.nqsets = pi->nqsets;//1;
++		qidx += pi->fcoe.nqsets;
++	}
++	s->fcoeqsets = qidx;
++	s->max_fcoeqsets = qidx;   /* MSI-X may lower it later */
++#endif	
+ 	if (is_offload(adap)) {
+ 		/*
+ 		 * For offload we use 1 queue/channel if all ports are up to 1G,
+@@ -6331,6 +6474,20 @@ static void cfg_queues(struct adapter *a
+ 		s->ethtxq[i].q.size = 1024;
+ #endif /* CONFIG_PO_FCOE */
+ 
++#ifdef CONFIG_PO_FCOE
++	for (i = 0; i < ARRAY_SIZE(s->fcoetxq); i++) {
++		s->fcoetxq[i].q.size = 8192;
++	}
++	
++	for (i = 0; i < ARRAY_SIZE(s->fcoerxq); i++) {
++		struct sge_eth_rxq *r = &s->fcoerxq[i];
++
++		init_rspq(adap, &r->rspq, 5, 1, 1024, 64);
++		r->rspq.uld = CXGB4_ULD_FCOE;
++		r->fl.size = 1024;
++	}
++#endif
++
+ 	for (i = 0; i < ARRAY_SIZE(s->ctrlq); i++)
+ 		s->ctrlq[i].q.size = 512;
+ 
+@@ -6469,6 +6626,35 @@ static void reduce_ethqs(struct adapter 
+ 	}
+ }
+ 
++#ifdef CONFIG_PO_FCOE
++/*
++ * Reduce the number of FCoE queues across all ports to at most n.
++ * n provides at least one queue per port.
++ */
++static void reduce_fcoeqs(struct adapter *adap, int n)
++{
++	int i;
++
++	while (n < adap->sge.fcoeqsets)
++		for_each_port(adap, i) {
++			struct port_info *pi = adap2pinfo(adap, i);
++			if (pi->fcoe.nqsets > 1) {
++				pi->fcoe.nqsets--;
++				adap->sge.fcoeqsets--;
++				if (adap->sge.fcoeqsets <= n)
++					break;
++			}
++		}
++
++	n = 0;
++	for_each_port(adap, i) {
++		struct port_info *pi = adap2pinfo(adap, i);
++		pi->fcoe.first_qset = n;
++		n += pi->fcoe.nqsets;
++	}
++}
++#endif
++
+ /* 2 MSI-X vectors needed for the FW queue and non-data interrupts */
+ #define EXTRA_VECS 2
+ 
+@@ -6495,6 +6681,9 @@ static int cxgb_enable_msix(struct adapt
+ #ifdef CONFIG_T4_MA_FAILOVER
+ 		want += 1; /* +1 for MA Failover Queue */
+ #endif
++#ifdef CONFIG_PO_FCOE
++		want += s->max_fcoeqsets;
++#endif	
+ #ifdef SCSI_CXGB4_ISCSI
+ 		want += s->niscsiq;
+ #endif
+@@ -6507,6 +6696,9 @@ static int cxgb_enable_msix(struct adapt
+ #ifdef CONFIG_T4_MA_FAILOVER
+ 		ofld_need += 1; /* +1 for MA Failover Queue */
+ #endif
++#ifdef CONFIG_PO_FCOE
++		ofld_need += nchan;
++#endif		
+ 	}
+ #ifdef CONFIG_CXGB4_DCB
+ 	/* For Data Center Bridging we need 8 Ethernet TX Priority Queues for
+@@ -6538,6 +6730,11 @@ static int cxgb_enable_msix(struct adapt
+ 		if (allocated < want) {
+ 			s->rdmaqs = nchan;
+ 			s->rdmaciqs = nchan;
++#ifdef CONFIG_PO_FCOE
++			s->max_fcoeqsets = nchan;
++			if (s->max_fcoeqsets < s->fcoeqsets)
++				reduce_fcoeqs(adap, s->max_fcoeqsets);
++#endif
+ #ifdef SCSI_CXGB4_ISCSI
+ 			s->niscsiq = nchan;
+ #endif
+@@ -6546,6 +6743,9 @@ static int cxgb_enable_msix(struct adapt
+ 		/* leftovers go to OFLD */
+ 		i = allocated - EXTRA_VECS - s->max_ethqsets -
+ 		    s->rdmaqs - s->rdmaciqs;
++#ifdef CONFIG_PO_FCOE
++		i -= s->max_fcoeqsets;
++#endif			
+ #ifdef SCSI_CXGB4_ISCSI
+ 		i -= s->niscsiq;
+ #endif
+@@ -6574,9 +6774,9 @@ static int cxgb_enable_msix(struct adapt
+ 	for (i = 0; i < allocated; ++i)
+ 		adap->msix_info[i].vec = entries[i].vector;
+ 	dev_info(adap->pdev_dev, "%d MSI-X vectors allocated, "
+-	         "nic %d ofld %d rdma cpl %d rdma ciq %d iscsi %d\n",
++	         "nic %d ofld %d rdma cpl %d rdma ciq %d iscsi %d fcoe %d\n",
+ 		 allocated, s->max_ethqsets, s->ofldqsets, s->rdmaqs,
+-		 s->rdmaciqs, s->niscsiq);
++		 s->rdmaciqs, s->niscsiq, s->max_fcoeqsets);
+ 
+ 	kfree(entries);
+ 	return 0;
+@@ -6959,12 +7159,6 @@ static struct net_device_ops cxgb4_netde
+ #ifdef CONFIG_NET_POLL_CONTROLLER
+ 	.ndo_poll_controller  = cxgb_netpoll,
+ #endif
+-#ifdef CONFIG_PO_FCOE
+-	.ndo_fcoe_ddp_target  = cxgb_fcoe_ddp_setup,
+-	.ndo_fcoe_ddp_done    = cxgb_fcoe_ddp_done,
+-	.ndo_fcoe_enable      = cxgb_fcoe_enable,
+-	.ndo_fcoe_disable     = cxgb_fcoe_disable,
+-#endif /* CONFIG_PO_FCOE */
+ #ifdef CONFIG_NET_RX_BUSY_POLL
+ 	.ndo_busy_poll        = cxgb_busy_poll,
+ #endif
+@@ -7354,6 +7548,12 @@ static int init_one(struct pci_dev *pdev
+ 		}
+ 	}
+ 
++#if defined(CONFIG_CHELSIO_T4_OFFLOAD) && defined(CONFIG_PO_FCOE)
++	if (setup_fcoe_dev(adapter)) {
++		dev_err(&pdev->dev, "failed to setup fcoe devices\n");
++		goto out_free_dev;
++	}	
++#endif
+ 	cfg_queues(adapter);  // XXX move after we know interrupt type
+ 
+ 	chip = CHELSIO_CHIP_VERSION(adapter->params.chip);
+@@ -7645,6 +7845,9 @@ fw_attach_fail:
+ 			if (pi->viid != 0)
+ 				t4_free_vi(adapter, adapter->mbox, adapter->pf,
+ 					   0, pi->viid);
++#ifdef CONFIG_PO_FCOE			
++			cleanup_fcoe_dev(adapter, pi);
++#endif			
+ 			kfree(adap2pinfo(adapter, i)->rss);
+ 			free_netdev(adapter->port[i]);
+ 		}
+@@ -7819,6 +8022,9 @@ static void remove_one(struct pci_dev *p
+ 			if (pi->viid != 0)
+ 				t4_free_vi(adapter, adapter->mbox,
+ 					   adapter->pf, 0, pi->viid);
++#ifdef CONFIG_PO_FCOE			
++			cleanup_fcoe_dev(adapter, pi);
++#endif			
+ 			kfree(adap2pinfo(adapter, i)->rss);
+ 			free_netdev(adapter->port[i]);
+ 		}
+diff -r 7fa4992f15e5 dev/T4/linux/drv/cxgb4_ofld.h
+--- a/cxgb4_ofld.h	Wed Apr 13 11:06:47 2016 -0700
++++ b/cxgb4_ofld.h	Sat Apr 16 17:24:33 2016 +0530
+@@ -12,6 +12,10 @@
+ #ifndef __CXGB4_OFLD_H
+ #define __CXGB4_OFLD_H
+ 
++#ifndef CONFIG_PO_FCOE
++#define CONFIG_PO_FCOE
++#endif
++
+ #include <linux/cache.h>
+ #include <linux/spinlock.h>
+ #include <linux/skbuff.h>
+@@ -317,6 +321,7 @@ enum cxgb4_uld {
+ 	CXGB4_ULD_RDMA,
+ 	CXGB4_ULD_ISCSI,
+ 	CXGB4_ULD_TOE,
++	CXGB4_ULD_FCOE,
+ 	CXGB4_ULD_MAX
+ };
+ 
+@@ -333,6 +338,7 @@ enum cxgb4_control {
+ 	CXGB4_CONTROL_DB_FULL,
+ 	CXGB4_CONTROL_DB_EMPTY,
+ 	CXGB4_CONTROL_DB_DROP,
++	CXGB4_CONTROL_DCB_UPDATE,
+ };
+ 
+ struct pci_dev;
+@@ -356,13 +362,15 @@ struct cxgb4_virt_res {                 
+ 	struct cxgb4_range qp;
+ 	struct cxgb4_range cq;
+ 	struct cxgb4_range ocq;
+-#ifdef CONFIG_PO_FCOE
++	struct cxgb4_range fcoe;
++	unsigned short fcoe_viid[NCHAN];     /* fcoe viids per port*/
++	unsigned short fcoe_nqsets[NCHAN];   /* fcoe nqsets per port*/
++	u8	fcoe_mac[NCHAN][6];	     /* fcoe vi mac per port */ 	
+ 	u8 *ppod_map;
+ 	u16 *tid2xid;
+ 	unsigned int toe_nppods;
+ 	unsigned int fcoe_nppods;
+ 	spinlock_t ppod_map_lock;	/* page pod map lock */
+-#endif /* CONFIG_PO_FCOE */
+ };
+ 
+ #define OCQ_WIN_OFFSET(pdev, vres) \
+@@ -380,6 +388,10 @@ struct cxgb4_lld_info {
+ 	const unsigned short *mtus;          /* MTU table */
+ 	const unsigned short *rxq_ids;       /* the ULD's Rx queue ids */
+ 	const unsigned short *ciq_ids;       /* the ULD's concentrator IQ ids */
++	const unsigned short *txq_ids;       /* the ULD's Tx queue ids */
++#ifdef CONFIG_PO_FCOE
++	uint16_t fw_evtq_cntxt_id;
++#endif
+ 	unsigned short nrxq;                 /* # of Rx queues */
+ 	unsigned short ntxq;                 /* # of Tx queues */
+ 	unsigned short nciq;
+@@ -434,6 +446,10 @@ struct cxgb4_uld_info {
+ int cxgb4_register_uld(enum cxgb4_uld type, const struct cxgb4_uld_info *p);
+ int cxgb4_unregister_uld(enum cxgb4_uld type);
+ int cxgb4_ofld_send(struct net_device *dev, struct sk_buff *skb);
++int cxgb4_fcoe_send(struct net_device *dev, struct sk_buff *skb);
++int cxgb4_fcoe_set_mac(const struct net_device *dev, const u8 *addr, u16 *idx,
++		bool clear);
++int cxgb4_fcoe_enable(const struct net_device *dev, bool enable);
+ unsigned int cxgb4_dbfifo_count(const struct net_device *dev, int lpfifo);
+ unsigned int cxgb4_port_chan(const struct net_device *dev);
+ unsigned int cxgb4_port_viid(const struct net_device *dev);
+diff -r 7fa4992f15e5 dev/T4/linux/drv/sge.c
+--- a/sge.c	Wed Apr 13 11:06:47 2016 -0700
++++ b/sge.c	Sat Apr 16 17:24:33 2016 +0530
+@@ -3101,6 +3101,260 @@ static inline int ofld_skb_map_head(stru
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PO_FCOE
++/**
++ *	fcoetxq_stop - stop an offload Tx queue that has become full
++ *	@q: the queue to stop
++ *	@skb: the packet causing the queue to become full
++ *
++ *	Stops an offload Tx queue that has become full and modifies the packet
++ *	being written to request a wakeup.
++ */
++static void fcoetxq_stop(struct sge_eth_txq *q, struct sk_buff *skb)
++{
++	struct fw_wr_hdr *wr = (struct fw_wr_hdr *)skb->data;
++
++	wr->lo |= htonl(F_FW_WR_EQUEQ | F_FW_WR_EQUIQ);
++	q->q.stops++;
++	q->full = 1;
++}
++
++#define POFCOE_GET_CMD(_skb)	(*((uint8_t *)(_skb)->data))
++
++#if 0
++static inline int is_fcoe_imm(struct sk_buff *skb)
++{
++	struct fw_wr_hdr *wrh;
++
++	if (POFCOE_GET_CMD(skb) == FW_ETH_TX_PKT_WR) {
++		wrh = (struct fw_wr_hdr *) skb->data;
++		return (((ALIGN(G_FW_WR_IMMDLEN(ntohl(wrh->hi)), 16) >> 4) + 1)
++				== G_FW_WR_LEN16(ntohl(wrh->lo))) ? 1 : 0;
++	} else {
++		BUG_ON(skb->len > SGE_MAX_WR_LEN);
++		skb->priority = DIV_ROUND_UP(skb->len, 8);
++		return 1;
++	}
++}
++#endif
++
++static inline int is_fcoe_imm(struct sk_buff *skb)
++{
++	BUG_ON(skb->len > SGE_MAX_WR_LEN);
++	return DIV_ROUND_UP(skb->len, 8);
++}
++
++/**
++ *	service_fcoeq - restart a suspended fcoe queue
++ *	@q: the fcoe queue
++ *
++ *	Services an fcoe Tx queue by moving packets from its packet queue
++ *	to the HW Tx ring.  The function starts and ends with the queue locked.
++ */
++static void service_fcoeq(struct sge_eth_txq *q)
++{
++	u64 *pos;
++	int credits;
++	struct sk_buff *skb;
++	unsigned int written = 0;
++	unsigned int flits, ndesc;
++	int last_desc;
++
++	while ((skb = skb_peek(&q->sendq)) != NULL && !q->full) {
++		/*
++		 * We drop the lock but leave skb on sendq, thus retaining
++		 * exclusive access to the state of the queue.
++		 */
++		spin_unlock(&q->sendq.lock); 
++
++		reclaim_completed_tx(q->adap, &q->q, false);
++
++		flits = skb->priority;                /* previously saved */
++		ndesc = flits_to_desc(flits);
++		credits = txq_avail(&q->q) - ndesc;
++		BUG_ON(credits < 0);
++		if (unlikely(credits < ETHTXQ_STOP_THRES) &&
++				POFCOE_GET_CMD(skb) != FW_POFCOE_TCB_WR)
++			fcoetxq_stop(q, skb);
++#if 0
++		/* request tx completion if needed for tx coalescing */
++		if (adap->tx_coal && q->q.coalesce.intr) {
++			wr_mid |= F_FW_WR_EQUEQ | F_FW_WR_EQUIQ;
++			q->q.coalesce.intr = false;
++		}
++#endif		
++#ifdef T4_TRACE
++		T4_TRACE5(q->adap->tb[q->q.cntxt_id & 7],
++			  "ofld_xmit: ndesc %u, pidx %u, len %u, main %u, "
++			  "frags %u", ndesc, q->q.pidx, skb->len,
++			  skb->len - skb->data_len, skb_shinfo(skb)->nr_frags);
++#endif
++		pos = (u64 *)&q->q.desc[q->q.pidx];
++		inline_tx_skb(skb, &q->q, pos);
++		last_desc = q->q.pidx + ndesc - 1;
++		if (last_desc >= q->q.size)
++			last_desc -= q->q.size;
++		q->q.sdesc[last_desc].skb = skb;
++
++		txq_advance(&q->q, ndesc);
++		/* timestamp of last packet transmitted */
++		q->tslast_pkt = jiffies; 
++		written += ndesc;
++		q->q.txp++;
++		if (unlikely(written > 32)) {
++			ring_tx_db(q->adap, &q->q, written);
++			written = 0;
++		}
++
++		spin_lock(&q->sendq.lock); 
++		__skb_unlink(skb, &q->sendq);
++	}
++	if (likely(written))
++		ring_tx_db(q->adap, &q->q, written);
++}
++
++/**
++ *	fcoe_xmit - send a packet through an fcoe queue
++ *	@q: the Tx fcoe queue
++ *	@skb: the packet
++ *
++ *	Send an fcoe packet through an SGE fcoe queue.
++ */
++static int fcoe_xmit(struct sge_eth_txq *q, struct sk_buff *skb)
++{
++//	skb->priority = calc_tx_flits_ofld(skb);       /* save for restart */
++	if (is_fcoe_imm(skb))
++		skb->priority = DIV_ROUND_UP(skb->len, 8);
++	spin_lock(&q->sendq.lock);
++	__skb_queue_tail(&q->sendq, skb);
++	if (q->sendq.qlen == 1)
++		service_fcoeq(q);
++	spin_unlock(&q->sendq.lock);
++	return NET_XMIT_SUCCESS;
++}
++
++/**
++ *	restart_fcoeq - restart a suspended fcoe queue
++ *	@data: the fcoe queue to restart
++ *
++ *	Resumes transmission on a suspended Tx fcoe queue.
++ */
++static void restart_fcoeq(unsigned long data)
++{
++	struct sge_eth_txq *q = (struct sge_eth_txq *)data;
++
++	spin_lock(&q->sendq.lock);
++	q->full = 0;            /* the queue actually is completely empty now */
++	service_fcoeq(q);
++	spin_unlock(&q->sendq.lock);
++}
++
++#if 0
++/**
++ *	sge_fcoe_tx_reclaim - Reclaims completed Tx Packets for FCoE queues.
++ *	@data: the adapter
++ *
++ *	Invoked periodically from a SGE TX timer to reclaim completed Tx 
++ *	packets for the FCoE Ethernet queues.  
++ */
++static void sge_fcoe_tx_reclaim(unsigned long data)
++{
++	unsigned int i, budget;
++	struct adapter *adap = (struct adapter *)data;
++	struct sge *s = &adap->sge;
++
++	budget = MAX_TIMER_TX_RECLAIM;
++	for (i = 0; i < s->fcoeqsets; i++) {
++		struct sge_eth_txq *q = &s->fcoetxq[i];
++
++		if (spin_trylock(&q->sendq.lock)) {
++			if (reclaimable(&q->q)) {
++				int avail = reclaimable(&q->q);
++/*				
++				CH_WARN(adap, "SGE fcoe txq:%d reclaim %d\n",
++						i, avail);
++*/						
++				if (avail > budget)
++					avail = budget;
++
++				free_tx_desc(adap, &q->q, avail, false);
++				q->q.in_use -= avail;
++
++				budget -= avail;
++				if (!budget){
++					spin_unlock(&q->sendq.lock);
++					break;
++				}	
++			}	
++#if 0
++
++			/* if coalescing is on, ship the coal WR */
++			if (q->q.coalesce.idx) {
++				ship_tx_pkt_coalesce_wr(adap, q);
++				q->q.coalesce.ison = false;
++			}
++#endif 			
++			spin_unlock(&q->sendq.lock);
++		}
++	}
++}
++#endif
++
++/**
++ *	skb_txq - return the Tx queue an offload packet should use
++ *	@skb: the packet
++ *
++ *	Returns the Tx queue an offload packet should use as indicated by bits
++ *	1-15 in the packet's queue_mapping.
++ */
++static inline unsigned int skb_txq(const struct sk_buff *skb)
++{
++	return skb->queue_mapping >> 1;
++}
++
++static inline int fcoe_send(struct adapter *adap, struct sk_buff *skb)
++{
++	unsigned int idx = skb_txq(skb);
++	struct port_info *pi = netdev_priv(skb->dev);
++
++	return fcoe_xmit(&adap->sge.fcoetxq[pi->fcoe.first_qset + 
++			(idx % pi->fcoe.nqsets)], skb);
++}
++
++/**
++ *	t4_fcoe_send - send an fcoe packet
++ *	@adap: the adapter
++ *	@skb: the packet
++ *
++ *	Sends an fcoe packet.  We use the packet queue_mapping to select the
++ *	appropriate Tx queue as follows: bit 0 indicates whether the packet
++ *	should be sent as regular or control, bits 1-15 select the queue.
++ */
++int t4_fcoe_send(struct adapter *adap, struct sk_buff *skb)
++{
++	int ret;
++
++	local_bh_disable();
++	ret = fcoe_send(adap, skb);
++	local_bh_enable();
++	return ret;
++}
++
++/**
++ *	cxgb4_fcoe_send - send an fcoe packet
++ *	@dev: the net device
++ *	@skb: the packet
++ *
++ *	Sends an fcoe packet.  This is an exported version of @t4_fcoe_send,
++ *	intended for ULDs.
++ */
++int cxgb4_fcoe_send(struct net_device *dev, struct sk_buff *skb)
++{
++	return t4_fcoe_send(netdev2adap(dev), skb);
++}
++EXPORT_SYMBOL(cxgb4_fcoe_send);
++#endif
++
+ /**
+  *	service_ofldq - service/restart a suspended offload queue
+  *	@q: the offload queue
+@@ -3311,17 +3565,6 @@ static void restart_ofldq(unsigned long 
+ 	spin_unlock(&q->sendq.lock);
+ }
+ 
+-/**
+- *	skb_txq - return the Tx queue an offload packet should use
+- *	@skb: the packet
+- *
+- *	Returns the Tx queue an offload packet should use as indicated by bits
+- *	1-15 in the packet's queue_mapping.
+- */
+-static inline unsigned int skb_txq(const struct sk_buff *skb)
+-{
+-	return skb->queue_mapping >> 1;
+-}
+ 
+ /**
+  *	is_ctrl_pkt - return whether an offload packet is a control packet
+@@ -4652,7 +4895,7 @@ int t4_ethrx_handler(struct sge_rspq *q,
+ 		}
+ 	} else {
+ 		skb_checksum_none_assert(skb);
+-
++#if 0
+ #ifdef CONFIG_PO_FCOE
+ #define CPL_RX_PKT_FLAGS (F_RXF_PSH | F_RXF_SYN | F_RXF_UDP | \
+ 			  F_RXF_TCP | F_RXF_IP | F_RXF_IP6 | F_RXF_LRO)
+@@ -4672,6 +4915,7 @@ int t4_ethrx_handler(struct sge_rspq *q,
+ 
+ #undef CPL_RX_PKT_FLAGS
+ #endif
++#endif
+ 	}
+ 
+ 	if (unlikely(pkt->vlan_ex)) {
+@@ -5219,6 +5463,10 @@ static void sge_tx_timer_cb(unsigned lon
+ 	}
+ #endif
+ 
++#ifdef CONFIG_PO_FCOE
++/*	sge_fcoe_tx_reclaim(data); */
++#endif	
++
+ 	budget = MAX_TIMER_TX_RECLAIM;
+ 	i = s->ethtxq_rover;
+ 	do {
+@@ -5492,6 +5740,184 @@ err:
+ 	return ret;
+ }
+ 
++#ifdef CONFIG_PO_FCOE	
++/*
++ * @intr_idx: MSI/MSI-X vector if >=0, -(absolute qid + 1) if < 0
++ * @cong: < 0 -> no congestion feedback, >= 0 -> congestion channel map
++ */
++int t4_sge_alloc_fcoe_rxq(struct adapter *adap, struct sge_rspq *iq, 
++		     bool fwevtq, struct net_device *dev, int intr_idx,
++		     struct sge_fl *fl, rspq_handler_t hnd, int cong)
++{
++	int ret, flsz = 0;
++	struct fw_iq_cmd c;
++	struct sge *s = &adap->sge;
++	struct port_info *pi = netdev_priv(dev);
++
++	/* Size needs to be multiple of 16, including status entry. */
++	iq->size = roundup(iq->size, 16);
++
++	iq->desc = alloc_ring(adap->pdev_dev, iq->size, iq->iqe_len, 0,
++			      &iq->phys_addr, NULL, 0, NUMA_NO_NODE);
++	if (!iq->desc)
++		return -ENOMEM;
++
++	memset(&c, 0, sizeof(c));
++	c.op_to_vfn = htonl(V_FW_CMD_OP(FW_IQ_CMD) | F_FW_CMD_REQUEST |
++			    F_FW_CMD_WRITE | F_FW_CMD_EXEC |
++			    V_FW_IQ_CMD_PFN(adap->pf) | V_FW_IQ_CMD_VFN(0));
++	c.alloc_to_len16 = htonl(F_FW_IQ_CMD_ALLOC | F_FW_IQ_CMD_IQSTART |
++				 (sizeof(c) / 16));
++	c.type_to_iqandstindex = htonl(V_FW_IQ_CMD_TYPE(FW_IQ_TYPE_FL_INT_CAP) |
++		V_FW_IQ_CMD_IQASYNCH(fwevtq) | V_FW_IQ_CMD_VIID(pi->fcoe.viid) |
++		V_FW_IQ_CMD_IQANDST(intr_idx < 0) |
++		V_FW_IQ_CMD_IQANUD(X_UPDATEDELIVERY_INTERRUPT) |
++		V_FW_IQ_CMD_IQANDSTINDEX(intr_idx >= 0 ? intr_idx :
++							-intr_idx - 1));
++	c.iqdroprss_to_iqesize = htons(V_FW_IQ_CMD_IQPCIECH(pi->tx_chan) |
++		F_FW_IQ_CMD_IQGTSMODE |
++		V_FW_IQ_CMD_IQINTCNTTHRESH(iq->pktcnt_idx) |
++		V_FW_IQ_CMD_IQESIZE(ilog2(iq->iqe_len) - 4));
++	c.iqsize = htons(iq->size);
++	c.iqaddr = cpu_to_be64(iq->phys_addr);
++	if (cong >= 0)
++		c.iqns_to_fl0congen = htonl(F_FW_IQ_CMD_IQFLINTCONGEN);
++
++	if (fl) {
++
++		/*
++		 * Allocate the ring for the hardware free list (with space
++		 * for its status page) along with the associated software
++		 * descriptor ring.  The free list size needs to be a multiple
++		 * of the Egress Queue Unit and at least 2 Egress Units larger
++		 * than the SGE's Egress Congrestion Threshold
++		 * (fl_starve_thres - 1).
++		 */
++		if (fl->size < s->fl_starve_thres - 1 + 2*8)
++			fl->size = s->fl_starve_thres - 1 + 2*8;
++		fl->size = roundup(fl->size, 8);
++		fl->desc = alloc_ring(adap->pdev_dev, fl->size, sizeof(__be64),
++				      sizeof(struct rx_sw_desc), &fl->addr,
++				      &fl->sdesc, s->stat_len, NUMA_NO_NODE);
++		if (!fl->desc)
++			goto fl_nomem;
++
++		flsz = fl->size / 8 + s->stat_len / sizeof(struct tx_desc);
++		c.iqns_to_fl0congen |=
++			htonl(V_FW_IQ_CMD_FL0HOSTFCMODE(X_HOSTFCMODE_NONE) |
++			      F_FW_IQ_CMD_FL0PACKEN |
++			      F_FW_IQ_CMD_FL0FETCHRO | F_FW_IQ_CMD_FL0DATARO |
++			      F_FW_IQ_CMD_FL0PADEN);
++		if (cong >= 0)
++			c.iqns_to_fl0congen |=
++				htonl(V_FW_IQ_CMD_FL0CNGCHMAP(cong) |
++				      F_FW_IQ_CMD_FL0CONGCIF |
++				      F_FW_IQ_CMD_FL0CONGEN);
++		c.fl0dcaen_to_fl0cidxfthresh =
++			htons(V_FW_IQ_CMD_FL0FBMIN(X_FETCHBURSTMIN_64B) |
++			      V_FW_IQ_CMD_FL0FBMAX(X_FETCHBURSTMAX_512B));
++		c.fl0size = htons(flsz);
++		c.fl0addr = cpu_to_be64(fl->addr);
++	}
++
++	ret = t4_wr_mbox(adap, adap->mbox, &c, sizeof(c), &c);
++	if (ret)
++		goto err;
++
++	netif_napi_add(dev, &iq->napi, napi_rx_handler, 64);
++	iq->cur_desc = iq->desc;
++	iq->cidx = 0;
++	iq->gen = 1;
++	iq->next_intr_params = iq->intr_params;
++	iq->cntxt_id = ntohs(c.iqid);
++	iq->abs_id = ntohs(c.physiqid);
++	if (!is_t4(adap->params.chip))
++		iq->bar2_addr = bar2_address(adap,
++			       		     iq->cntxt_id,
++					     T4_BAR2_QTYPE_INGRESS,
++					     &iq->bar2_qid);
++	iq->size--;                           /* subtract status entry */
++	iq->netdev = dev;   // XXX use napi.dev in newer kernels
++	iq->handler = hnd;
++
++	/* set offset to -1 to distinguish ingress queues without FL */
++	iq->offset = fl ? 0 : -1;
++
++	adap->sge.ingr_map[iq->cntxt_id - adap->sge.ingr_start] = iq;
++
++	if (fl) {
++		fl->cntxt_id = ntohs(c.fl0id);
++		fl->avail = fl->pend_cred = 0;
++		fl->pidx = fl->cidx = 0;
++		fl->alloc_failed = fl->large_alloc_failed = fl->starving = 0;
++		adap->sge.egr_map[fl->cntxt_id - adap->sge.egr_start] = fl;
++
++		/*
++		 * Note, we must initialize the Free List User Doorbell
++		 * address before refilling the Free List!
++		 */
++		if (!is_t4(adap->params.chip))
++			fl->bar2_addr = bar2_address(adap,
++				       		     fl->cntxt_id,
++						     T4_BAR2_QTYPE_EGRESS,
++						     &fl->bar2_qid);
++
++		refill_fl(adap, fl, fl_cap(fl), GFP_KERNEL);
++	}
++
++	/*
++	 * For T5 and later we attempt to set up the Congestion Manager values
++	 * of the new RX Ethernet Queue.  This should really be handled by
++	 * firmware because it's more complex than any host driver wants to
++	 * get involved with and it's different per chip and this is almost
++	 * certainly wrong.  Formware would be wrong as well, but it would be
++	 * a lot easier to fix in one place ...  For now we do something very
++	 * simple (and hopefully less wrong).
++	 */
++	if (!is_t4(adap->params.chip) && cong >= 0) {
++		u32 param, val;
++		int i;
++
++		param = (V_FW_PARAMS_MNEM(FW_PARAMS_MNEM_DMAQ) |
++			 V_FW_PARAMS_PARAM_X(FW_PARAMS_PARAM_DMAQ_CONM_CTXT) |
++			 V_FW_PARAMS_PARAM_YZ(iq->cntxt_id));
++		if (cong == 0)
++			val = V_CONMCTXT_CNGTPMODE(X_CONMCTXT_CNGTPMODE_QUEUE);
++		else {
++			val = V_CONMCTXT_CNGTPMODE(X_CONMCTXT_CNGTPMODE_CHANNEL);
++			for (i = 0; i < 4; i++) {
++				if (cong & (1 << i))
++					val |= V_CONMCTXT_CNGCHMAP(1 << (i << 2));
++			}
++		}
++		ret = t4_set_params(adap, adap->mbox, adap->pf, 0, 1,
++				    &param, &val);
++		if (ret)
++			dev_warn(adap->pdev_dev, "Failed to set Congestion"
++				 " Manager Context for Ingress Queue %d: %d\n",
++				 iq->cntxt_id, -ret);
++	}
++	return 0;
++
++fl_nomem:
++	ret = -ENOMEM;
++err:
++	if (iq->desc) {
++		dma_free_coherent(adap->pdev_dev, iq->size * iq->iqe_len,
++				  iq->desc, iq->phys_addr);
++		iq->desc = NULL;
++	}
++	if (fl && fl->desc) {
++		kfree(fl->sdesc);
++		fl->sdesc = NULL;
++		dma_free_coherent(adap->pdev_dev, flsz * sizeof(struct tx_desc),
++				  fl->desc, fl->addr);
++		fl->desc = NULL;
++	}
++	return ret;
++}
++#endif
++
+ static void init_txq(struct adapter *adap, struct sge_txq *q, unsigned int id)
+ {
+ 	q->cntxt_id = id;
+@@ -5571,6 +5997,67 @@ int t4_sge_alloc_eth_txq(struct adapter 
+ 	return 0;
+ }
+ 
++#ifdef CONFIG_PO_FCOE	
++int t4_sge_alloc_fcoe_txq(struct adapter *adap, struct sge_eth_txq *txq,
++			 struct net_device *dev, struct netdev_queue *netdevq,
++			 unsigned int iqid)
++{
++	int ret, nentries;
++	struct fw_eq_eth_cmd c;
++	struct sge *s = &adap->sge;
++	struct port_info *pi = netdev_priv(dev);
++
++	/* Add status entries */
++	nentries = txq->q.size + s->stat_len / sizeof(struct tx_desc);
++
++	txq->q.desc = alloc_ring(adap->pdev_dev, txq->q.size,
++			sizeof(struct tx_desc), sizeof(struct tx_sw_desc),
++			&txq->q.phys_addr, &txq->q.sdesc, s->stat_len,
++			NUMA_NO_NODE);
++	if (!txq->q.desc)
++		return -ENOMEM;
++
++	memset(&c, 0, sizeof(c));
++	c.op_to_vfn = htonl(V_FW_CMD_OP(FW_EQ_ETH_CMD) | F_FW_CMD_REQUEST |
++			    F_FW_CMD_WRITE | F_FW_CMD_EXEC |
++			    V_FW_EQ_ETH_CMD_PFN(adap->pf) |
++			    V_FW_EQ_ETH_CMD_VFN(0));
++	c.alloc_to_len16 = htonl(F_FW_EQ_ETH_CMD_ALLOC |
++				 F_FW_EQ_ETH_CMD_EQSTART | (sizeof(c) / 16));
++	c.autoequiqe_to_viid = htonl(F_FW_EQ_ETH_CMD_AUTOEQUEQE |
++				     V_FW_EQ_ETH_CMD_VIID(pi->fcoe.viid));
++	c.fetchszm_to_iqid =
++		htonl(V_FW_EQ_ETH_CMD_HOSTFCMODE(X_HOSTFCMODE_STATUS_PAGE) |
++		      V_FW_EQ_ETH_CMD_PCIECHN(pi->tx_chan) |
++		      F_FW_EQ_ETH_CMD_FETCHRO | V_FW_EQ_ETH_CMD_IQID(iqid));
++	c.dcaen_to_eqsize =
++		htonl(V_FW_EQ_ETH_CMD_FBMIN(X_FETCHBURSTMIN_64B) |
++		      V_FW_EQ_ETH_CMD_FBMAX(X_FETCHBURSTMAX_512B) |
++		      V_FW_EQ_ETH_CMD_CIDXFTHRESH(X_CIDXFLUSHTHRESH_32) |
++		      V_FW_EQ_ETH_CMD_EQSIZE(nentries));
++	c.eqaddr = cpu_to_be64(txq->q.phys_addr);
++
++	ret = t4_wr_mbox(adap, adap->mbox, &c, sizeof(c), &c);
++	if (ret) {
++		kfree(txq->q.sdesc);
++		txq->q.sdesc = NULL;
++		dma_free_coherent(adap->pdev_dev,
++				  nentries * sizeof(struct tx_desc),
++				  txq->q.desc, txq->q.phys_addr);
++		txq->q.desc = NULL;
++		return ret;
++	}
++
++	init_txq(adap, &txq->q, G_FW_EQ_ETH_CMD_EQID(ntohl(c.eqid_pkd)));
++	txq->adap = adap;
++	skb_queue_head_init(&txq->sendq);
++	tasklet_init(&txq->qresume_tsk, restart_fcoeq, (unsigned long)txq);
++	txq->tso = txq->tx_cso = txq->vlan_ins = 0;
++	txq->mapping_err = 0;
++	return 0;
++}
++#endif
++
+ int t4_sge_alloc_ctrl_txq(struct adapter *adap, struct sge_ctrl_txq *txq,
+ 			  struct net_device *dev, unsigned int iqid,
+ 			  unsigned int cmplqid)
+@@ -5774,6 +6261,24 @@ void t4_free_sge_resources(struct adapte
+ 		}
+ 	}
+ 
++#ifdef CONFIG_PO_FCOE	
++	/* clean up FCoE  Tx/Rx queues */
++	eq = adap->sge.fcoerxq;
++	etq = adap->sge.fcoetxq;
++	for (i = 0; i < adap->sge.fcoeqsets; i++, eq++, etq++) {
++		if (eq->rspq.desc)
++			free_rspq_fl(adap, &eq->rspq, &eq->fl);
++		if (etq->q.desc) {
++			tasklet_kill(&etq->qresume_tsk);
++			t4_eth_eq_free(adap, adap->mbox, adap->pf, 0,
++				       etq->q.cntxt_id);
++			free_tx_desc(adap, &etq->q, etq->q.in_use, false);
++			kfree(etq->q.sdesc);
++			__skb_queue_purge(&etq->sendq);
++			free_txq(adap, &etq->q);
++		}
++	}
++#endif
+ 	/* clean up TOE, RDMA and iSCSI Rx queues */
+ 	t4_free_ofld_rxqs(adap, adap->sge.ofldqsets, adap->sge.ofldrxq);
+ 	t4_free_ofld_rxqs(adap, adap->sge.rdmaqs, adap->sge.rdmarxq);
+@@ -5919,6 +6424,15 @@ void t4_sge_stop(struct adapter *adap)
+ 	if (s->tx_timer.function)
+ 		del_timer_sync(&s->tx_timer);
+ 
++#ifdef CONFIG_PO_FCOE	
++	for (i = 0; i < adap->sge.fcoeqsets; i++) {
++		struct sge_eth_txq *etq = &s->fcoetxq[i];
++		if (etq->q.desc) {
++			tasklet_kill(&etq->qresume_tsk);
++		}
++	}
++#endif
++
+ 	for (i = 0; i < ARRAY_SIZE(s->ofldtxq); i++) {
+ 		struct sge_ofld_txq *q = &s->ofldtxq[i];
+ 

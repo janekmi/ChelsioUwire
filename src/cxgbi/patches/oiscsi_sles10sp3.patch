@@ -1,0 +1,13 @@
+diff --git a/kernel/2.6.14-23_compat.patch b/kernel/2.6.14-23_compat.patch
+index 8936615..033c193 100644
+--- a/kernel/2.6.14-23_compat.patch
++++ b/kernel/2.6.14-23_compat.patch
+@@ -789,7 +789,7 @@ index 0000000..e6511d3
+ +#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,23)
+ +
+ +#ifdef	SLE_VERSION_CODE
+-+#if SLE_VERSION_CODE == SLE_VERSION(10,2,0)
+++#if SLE_VERSION_CODE >= SLE_VERSION(10,2,0) && SLE_VERSION_CODE <= SLE_VERSION(10,3,0)
+ + 
+ +static inline unsigned fls_long(unsigned long l)
+ +{

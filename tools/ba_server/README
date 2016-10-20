@@ -1,0 +1,22 @@
+
+			Chelsio B320E Bypass Adapter
+
+
+	The bypass adapter application can be built from the ba/build 
+directory by issuing the make command. The application is installed by
+doing a "make install". If the environment variable PREFIX is specified,
+it will be used to specified the installation root. Othereise the binaries
+are installled in /sbin and the library in /lib.
+
+	The server application must be started in order to initialize the
+adapter's rules engine. This cone be done by:
+
+	# ba_server &
+
+Root priveliges are required in order to access an AF_PACKET socket.
+
+
+	There are two client command, "bypass" and "redirect" that implement
+the command syntax as specified in the design document.
+
+

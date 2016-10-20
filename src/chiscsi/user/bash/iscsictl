@@ -1,0 +1,51 @@
+#set -x
+_iscsi_complete() 
+{
+    local cur prev opts targets initiators
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    if [[ "$cur" =~ "=" ]]; then
+        temp=$cur
+        prev=$( echo $temp | cut -d"=" -f 1)"="
+        cur=$( echo $temp | cut -d"=" -f 2)
+    fi
+
+    opts="-f -S -s -c -g -G -D -F -r -U -W -h -v"
+
+	case "${prev}" in
+                target=)
+	                targets=$( grep TargetName /etc/chelsio-iscsi/chiscsi.conf | grep -v \# | cut -d'=' -f 2 )
+        	        COMPREPLY=( $(compgen -W "${targets}" -- ${cur}) )
+	                return 0
+        	        ;;
+		-S|-s|-c)
+			opts="target="
+			COMPREPLY=( $(compgen -o nospace -W "${opts}" -- ${cur}) )
+			return 0
+			;;
+		-D)
+			entity="Portal="
+			COMPREPLY=( $(compgen -o nospace -W "${entity}" -- ${cur}) )
+	                return 0
+        	        ;;
+		-k)
+			targetopts="PortalGroup ACL ACL_Enable ShadowMode"
+			opts="AuthMethod DataDigest FirstBurstLength HeaderDigest ImmediateData InitialR2T InitiatorAlias InitiatorName \
+			MaxBurstLength MaxConnections MaxOutstandingR2T MaxRecvDataSegimentLength RegisteriSNS Auth_CHAP_ChallengeLength \
+			Auth_CHAP_Initiator Auth_CHAP_Policy Auth_CHAP_Target"
+			if [[ "${COMP_WORDS[2]}" =~ "target=" ]]; then
+				opts=$opts" "$targetopts
+			fi 
+			COMPREPLY=( $(compgen -o nospace -W "${opts}" -- ${cur}) )
+			return 0
+			;;
+	esac
+	
+	if [[ "$prev" =~ "iscsictl" ]]; then
+	        COMPREPLY=( $(compgen -W "${opts}" -S ' ' -- ${cur}) )
+	fi
+}
+complete -F _iscsi_complete -o nospace iscsictl
+

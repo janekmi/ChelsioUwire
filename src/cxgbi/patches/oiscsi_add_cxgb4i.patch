@@ -1,0 +1,38 @@
+diff -uNr open-iscsi-2.0-872/usr/iscsi_net_util.c open-iscsi-2.0-872.cxgbi/usr/iscsi_net_util.c
+--- open-iscsi-2.0-872/usr/iscsi_net_util.c	2010-08-11 08:27:07.000000000 -0700
++++ open-iscsi-2.0-872.cxgbi/usr/iscsi_net_util.c	2010-09-02 09:56:21.000000000 -0700
+@@ -41,6 +41,7 @@
+ static struct iscsi_net_driver net_drivers[] = {
+ #ifdef OFFLOAD_BOOT_SUPPORTED
+ 	{"cxgb3", "cxgb3i" },
++	{"cxgb4", "cxgb4i" },
+ 	{"bnx2", "bnx2i" },
+ 	{"bnx2x", "bnx2i"},
+ #endif
+diff -uNr open-iscsi-2.0-872/usr/transport.c open-iscsi-2.0-872.cxgbi/usr/transport.c
+--- open-iscsi-2.0-872/usr/transport.c	2010-08-11 08:27:07.000000000 -0700
++++ open-iscsi-2.0-872.cxgbi/usr/transport.c	2010-09-02 09:57:08.000000000 -0700
+@@ -52,6 +52,15 @@
+ 	.create_conn	= cxgb3i_create_conn,
+ };
+ 
++struct iscsi_transport_template cxgb4i = {
++	.name		= "cxgb4i",
++	.set_host_ip	= 1,
++	.ep_connect	= ktransport_ep_connect,
++	.ep_poll	= ktransport_ep_poll,
++	.ep_disconnect	= ktransport_ep_disconnect,
++	.create_conn	= cxgb3i_create_conn,
++};
++
+ struct iscsi_transport_template bnx2i = {
+ 	.name		= "bnx2i",
+ 	.set_host_ip	= 1,
+@@ -76,6 +85,7 @@
+ 	&iscsi_tcp,
+ 	&iscsi_iser,
+ 	&cxgb3i,
++	&cxgb4i,
+ 	&bnx2i,
+ 	&qla4xxx,
+ 	&be2iscsi,

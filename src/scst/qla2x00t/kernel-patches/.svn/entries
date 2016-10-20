@@ -1,0 +1,40 @@
+8
+
+dir
+5222
+svn://svn.code.sf.net/p/scst/svn/trunk/qla2x00t/kernel-patches
+svn://svn.code.sf.net/p/scst/svn
+
+
+
+2010-11-16T18:41:28.021127Z
+2716
+vlnb
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+d57e44dd-8a1f-0410-8b47-8ef2f437770f
+
+scst_fc_vport_create.patch
+file
+
+
+
+
+2014-04-10T13:32:39.000000Z
+cc4686f66c880348072ae27fe2fd0f49
+2010-11-16T18:41:28.021127Z
+2716
+vlnb
+

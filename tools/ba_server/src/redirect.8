@@ -1,0 +1,169 @@
+.\" -*- nroff -*-
+.\" Copyright 2004-2011 by Chelsio Communications.  All Rights Reserved.
+.TH REDIRECT "8" "October 2011" "redirect 1.2" "Linux"
+.SH "NAME"
+redirect \- manipulate Chelsio bypass card packet redirect settings
+.SH "SYNOPSIS"
+.B redirect
+\fIinterface_name\fR
+\fIcommand\fR \fB--key\fR value ...
+.PP
+.B redirect interface_name list
+.PP
+.B redirect interface_name dump
+.PP
+.B redirect interface_name add --table table_id rule_keys ...
+.PP
+.B redirect interface_name update --table table_id --index rule_index keys ...
+.PP
+.B redirect interface_name match --table table_id keys ...
+.PP
+.B redirect interface_name delete --table table_id --index rule_index
+.PP
+.B redirect interface_name purge --table table_id 
+.PP
+.B redirect interface_name move --table table_id --old_id old_index --new_id new_index
+.PP
+.B redirect interface_name count --table table_id --index rule_index
+.PP
+.PP
+.B redirect interface_name create_table --table table_id 
+.PP
+.B redirect interface_name delete_table --table table_id 
+.PP
+.B redirect interface_name activate_table --table table_id 
+.PP
+.B redirect interface_name deactivate_table --table table_id 
+.PP
+
+.SH "DESCRIPTION"
+.BI redirect
+manages the tables and rules that can be used to performs actions on a packet
+based on specified matching criteria. By specifiying fields and values, 
+matching packets can redirected to the host, dropped, or forwarded directly
+to the other port.
+
+.SH "COMMANDS"
+.PP
+.B redirect
+supports the following commands:
+.TP
+\fBhelp\fR
+Show usage information.
+.TP
+\fBcreate_table \fR
+Create a new table that is used to hold a set of rules.
+.TP
+\fBactivate_table \fR
+Activate a table so that all the rules in it will be active.
+.TP
+\fBdeactivate_table \fR
+Deactivate a table and its associated rules.
+.TP
+\fBdelete_table \fR
+Delete a table and the rules in it.
+.TP
+\fBadd \fR
+Add a rule to a table.
+.TP
+\fBcount \fR
+Display a count of the number of times a packet has matched a rule.
+.TP
+\fBdelete \fR
+Delete a rule from a table.
+.TP
+\fBlist \fR
+List all configured tables and rules.
+.TP
+\fBdump \fR
+Similiar to list expect that the tables and rules are displayed in command
+line syntax. This is useful for saving configuration to a file so that it
+can easily be restored upon restart.
+.TP
+\fBmatch \fR
+Match specified keys to a rule in a table.
+.TP
+\fBmove \fR
+Move a rule from one index number to another so that rule ordering is changed.
+.TP
+\fBpurge \fR
+Remove all rules from the specified table.
+.TP
+\fBupdate \fR
+Update the specified rule with new keys.
+
+.SH "GENERAL KEYS"
+.PP
+.TP
+\fB--table \fR
+The table id number.
+.TP
+\fB--index \fR
+Rule index number.
+
+.SH "REDIRECT ADD/UPDATE/MATCH RULE KEYS"
+.PP
+\fBredirect add\fR,\fBupdate\fR, and \fBmatch\fR share a set of keys.
+If the index number is not specified when adding a rule, the rule is
+appended to the table.
+.TP
+\fB--proto \fR
+IP protocol to match on. Values are \fBicmp\fR, \fBtcp\fR, \fBudp\fR, and \fBany\fR.
+.TP
+\fB--srcaddr \fR
+IP source address.
+.TP
+\fB--srcmask \fR
+IP source address mask.
+.TP
+\fB--srcaddr6 \fR
+IPv6 source address.
+.TP
+\fB--srcmask6 \fR
+IPv6 source address mask.
+.TP
+\fB--dstaddr \fR
+IP destination address.
+.TP
+\fB--dstmask \fR
+IP destination address mask.
+.TP
+\fB--dstaddr6 \fR
+IPv6 destination address.
+.TP
+\fB--dstmask6 \fR
+IPv6 destination address mask.
+.TP
+\fB--srcport \fR
+IP source port.
+.TP
+\fB--srcportmask \fR
+IP source port mask.
+.TP
+\fB--dstport \fR
+IP destination port.
+.TP
+\fB--dstportmask \fR
+IP destination port mask.
+.TP
+\fB--vlan    \fR
+VLAN id.
+.TP
+\fB--ipv6    \fR
+Specifies that the rule is an IPv6 rule.
+.TP
+\fB--action \fR
+The disposition of the packet if the rule matches.
+Actions are \fBinput\fR, \fBforward\fR, or \fBdrop\fR.
+.TP
+\fB--port \fR
+If the action is input or redirect, this key specifies the port to
+which the packet is directed. The default is port 0.
+
+.SH BUGS
+None known.
+.SH "SEE ALSO"
+ifconfig(8), bypass(8)
+.SH "AVAILABILITY"
+.B redirect
+is available from Chelsio Communications.

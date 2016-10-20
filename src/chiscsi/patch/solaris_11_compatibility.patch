@@ -1,0 +1,25 @@
+diff -r ca50701a4aff chiscsi/private/klib/target/iscsi_target.c
+--- a/chiscsi/private/klib/target/iscsi_target.c	Thu Jan 13 13:57:21 2011 -0800
++++ b/chiscsi/private/klib/target/iscsi_target.c	Thu Jan 13 17:15:33 2011 -0800
+@@ -256,8 +256,8 @@
+ 	SET_PDU_OPCODE(tpdu, ISCSI_OPCODE_LOGOUT_RESPONSE);
+ 	SET_PDU_F(tpdu);
+ 	SET_PDU_ITT(tpdu, GET_PDU_ITT(pdu));
++	uint_serial_inc(conn->c_statsn);
+ 	SET_PDU_STATSN(tpdu, conn->c_statsn);
+-	uint_serial_inc(conn->c_statsn);
+ 	SET_PDU_EXPCMDSN(tpdu, conn->c_sess->s_expcmdsn);
+ 	SET_PDU_MAXCMDSN(tpdu, conn->c_sess->s_maxcmdsn);
+ /*
+diff -r ca50701a4aff chiscsi/private/klib/target/text_request.c
+--- a/chiscsi/private/klib/target/text_request.c	Thu Jan 13 13:57:21 2011 -0800
++++ b/chiscsi/private/klib/target/text_request.c	Thu Jan 13 17:15:33 2011 -0800
+@@ -31,8 +31,6 @@
+ 
+ 	if (!ibit)
+ 		uint_serial_inc(sess->s_maxcmdsn);
+-	if (fbit)
+-		uint_serial_inc(conn->c_statsn);
+ 	
+  	while (conn->c_datap_cnt < conn->c_datap_max) {
+ 		iscsi_pdu *pdu;
