@@ -898,6 +898,8 @@ int ibv_cmd_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		      int attr_mask,
 		      struct ibv_modify_qp *cmd, size_t cmd_size)
 {
+	(void) VALGRIND_MAKE_MEM_DEFINED(attr, sizeof *attr);
+
 	IBV_INIT_CMD(cmd, cmd_size, MODIFY_QP);
 
 	cmd->qp_handle 		 = qp->handle;
