@@ -1,0 +1,15 @@
+.deps
+Makefile*
+Makefile
+aclocal.m4
+autom4te.cache/
+config.h*
+config.h
+config.status
+config/*
+configure
+libcxgb4.spec
+libtool
+src/.dirstamp
+src/.libs/
+stamp-h1

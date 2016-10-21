@@ -1,0 +1,7 @@
+build
+rpmbuild
+*.o
+*.lo
+*.la
+*.pyc
+*.log

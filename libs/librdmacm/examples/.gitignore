@@ -1,0 +1,16 @@
+.deps/
+.dirstamp
+.libs/
+cmtime
+mckey
+rcopy
+rdma_client
+rdma_server
+rdma_xclient
+rdma_xserver
+riostream
+rping
+rstream
+ucmatose
+udaddy
+udpong
