@@ -303,6 +303,7 @@ int c4iw_destroy_cq(struct ibv_cq *ibcq)
 	dev->cqid2ptr[chp->cq.cqid] = NULL;
 	pthread_spin_unlock(&dev->lock);
 
+	free(chp->cq.swiq_queue);
 	free(chp->cq.sw_queue);
 	free(chp);
 	return 0;
